@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="PocketLog.Client/PocketLog.Client.csproj" />
+  <Project Path="PocketLog.Server/PocketLog.Server.csproj" />
+  <Project Path="PocketLog.Shared/PocketLog.Shared.csproj" />
+</Solution>
