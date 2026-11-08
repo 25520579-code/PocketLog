@@ -1,9 +1,11 @@
+using Guna.UI2.WinForms;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
+using System.Data.SqlClient;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using Guna.UI2.WinForms;
 
 namespace PocketLog.Client
 {
@@ -24,6 +26,7 @@ namespace PocketLog.Client
         private readonly Color clrAppBg = Color.FromArgb(245, 247, 246);
         private readonly Color clrCardBg = Color.White;
         private readonly Color clrPrimaryGreen = Color.FromArgb(29, 99, 76);
+       
         private readonly Color clrSoftGreenBg = Color.FromArgb(232, 245, 239);
         private readonly Color clrSoftGreenBorder = Color.FromArgb(132, 190, 168);
         private readonly Color clrIndigo = Color.FromArgb(57, 66, 167);
@@ -33,7 +36,8 @@ namespace PocketLog.Client
         private readonly Color clrBadgeOrangeTxt = Color.FromArgb(168, 85, 34);
         private readonly Color clrBorderLight = Color.FromArgb(218, 224, 221);
         private readonly Color clrTextMain = Color.FromArgb(28, 32, 30);
-        private readonly Color clrTextMuted = Color.FromArgb(110, 118, 114);
+        private readonly Color clrTextMuted = Color.FromArgb(110, 118, 114); 
+        private readonly string connString = ConfigurationManager.ConnectionStrings["PocketLogDBConn"]?.ConnectionString;
 
         private readonly (string Name, string Emoji)[] standardCategories = new[]
         {
@@ -98,6 +102,7 @@ namespace PocketLog.Client
         {
             InitializeComponent();
             SeedInitialData();
+            LoadPostsFromDatabase();
             SetupPhoneShell();
         }
 
@@ -245,6 +250,68 @@ namespace PocketLog.Client
                 UseMnemonic = false,
                 BackColor = Color.Transparent
             };
+        }
+        private List<(string Name, string Emoji)> GetCategoriesFromDatabase()
+        {
+            return new List<(string Name, string Emoji)>
+            {
+                ("🍜 Đồ ăn/Thức uống", "🍜"),
+                ("⛽ Xăng cộ", "⛽"),
+                ("👕 Quần áo", "👕"),
+                ("🏠 Tiền trọ", "🏠"),
+                ("🛒 Mua sắm", "🛒"),
+                ("📚 Học tập/Khác", "📚")
+            };
+
+        }
+        private void LoadPostsFromDatabase()
+        {
+            string connString = ConfigurationManager.ConnectionStrings["PocketLogDBConn"]?.ConnectionString;
+            if (string.IsNullOrEmpty(connString)) return;
+
+            using (SqlConnection conn = new SqlConnection(connString))
+            {
+                try
+                {
+                    conn.Open();
+                    // Đọc các bài đăng từ CSDL, xếp bài mới nhất lên đầu
+                    string query = @"SELECT p.PostID, p.Caption, p.TotalAmount, p.CreatedAt, i.ItemName, i.Category 
+                               FROM ExpensePosts p
+                               LEFT JOIN ExpenseItems i ON p.PostID = i.PostID
+                               ORDER BY p.PostID ASC"; // Sắp xếp tăng dần để khi Insert(0) bài mới nhất sẽ nằm trên cùng
+
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            string caption = reader["Caption"]?.ToString() ?? "";
+                            int totalAmt = reader["TotalAmount"] != DBNull.Value ? Convert.ToInt32(reader["TotalAmount"]) : 0;
+                            string itemName = reader["ItemName"]?.ToString() ?? "Khoản chi";
+                            string category = reader["Category"]?.ToString() ?? "🍜 Đồ ăn/Thức uống";
+
+                            // ĐỔI THÀNH Insert(0, ...) ĐỂ BÀI MỚI CHÈN LÊN ĐẦU DANH SÁCH MÀN HÌNH CHÍNH
+                            posts.Insert(0, new LocketPost
+                            {
+                                IsMine = true,
+                                Author = "Huy Hoàng (Bạn)",
+                                HasTag = true,
+                                Category = category,
+                                NoteTop = $"{itemName} • {totalAmt:N0}đ",
+                                CaptionInside = caption,
+                                Amount = totalAmt,
+                                Time = "Vừa xong",
+                                Emoji = "🍜",
+                                PhotoBg = Color.FromArgb(68, 118, 98)
+                            });
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Tránh crash nếu CSDL bận
+                }
+            }
         }
 
         private Guna2Button MakeBtn(string text, int x, int y, int w, int h, int radius, Color fill, Color fore, Color border, int borderThick = 1, float fontSize = 8.5F)
@@ -979,8 +1046,79 @@ namespace PocketLog.Client
                     int.TryParse(txtAmountNum.Text.Replace(".", "").Replace(",", ""), out parsedAmt);
                     if (parsedAmt <= 0) parsedAmt = 45000;
                 }
-
                 var taggedList = hasTag ? taggedFriendNames.ToList() : new List<string>();
+
+                string connString = ConfigurationManager.ConnectionStrings["PocketLogDBConn"]?.ConnectionString;
+
+                // 1. Lưu xuống SQL Server LocalDB
+                if (!string.IsNullOrEmpty(connString) && hasTag)
+                {
+                    using (SqlConnection conn = new SqlConnection(connString))
+                    {
+                        try
+                        {
+                            conn.Open();
+
+                            // Lưu vào bảng ExpensePosts
+                            string insertPostQuery = @"INSERT INTO ExpensePosts (UserID, ImagePath, Caption, IsPublicToFriends, IsExpenseTracked, TotalAmount, CreatedAt) 
+                                                       VALUES (@UserID, @ImagePath, @Caption, 1, 1, @TotalAmount, GETDATE());
+                                                       SELECT SCOPE_IDENTITY();";
+
+                            int newPostId = 0;
+                            using (SqlCommand cmdPost = new SqlCommand(insertPostQuery, conn))
+                            {
+                                cmdPost.Parameters.AddWithValue("@UserID", 1); // ID Huy Hoàng (Bạn)
+                                cmdPost.Parameters.AddWithValue("@ImagePath", "default_path.jpg");
+                                cmdPost.Parameters.AddWithValue("@Caption", string.IsNullOrWhiteSpace(txtCaption.Text) ? "Khoảnh khắc mới ✨" : txtCaption.Text);
+                                cmdPost.Parameters.AddWithValue("@TotalAmount", parsedAmt);
+
+                                object postIdObj = cmdPost.ExecuteScalar();
+                                if (postIdObj != null) newPostId = Convert.ToInt32(postIdObj);
+                            }
+
+                            // Lưu món vào bảng ExpenseItems
+                            if (newPostId > 0)
+                            {
+                                string insertItemQuery = @"INSERT INTO ExpenseItems (PostID, ItemName, Amount, Category, PosX, PosY) 
+                                                           VALUES (@PostID, @ItemName, @Amount, @Category, 0.5, 0.5)";
+                                using (SqlCommand cmdItem = new SqlCommand(insertItemQuery, conn))
+                                {
+                                    cmdItem.Parameters.AddWithValue("@PostID", newPostId);
+                                    cmdItem.Parameters.AddWithValue("@ItemName", string.IsNullOrWhiteSpace(txtNoteTop.Text) ? "Khoản chi mới" : txtNoteTop.Text);
+                                    cmdItem.Parameters.AddWithValue("@Amount", parsedAmt);
+                                    cmdItem.Parameters.AddWithValue("@Category", selectedCategory);
+                                    cmdItem.ExecuteNonQuery();
+                                }
+                            }
+
+                            // Nếu có tag bạn bè -> Lưu công nợ vào bảng SplitBills
+                            if (newPostId > 0 && taggedList.Count > 0)
+                            {
+                                int sharePerPerson = parsedAmt / (taggedList.Count + 1);
+                                foreach (var friendName in taggedList)
+                                {
+                                    int debtorId = (friendName == "Gia Huy") ? 2 : 3;
+                                    string insertSplit = @"INSERT INTO SplitBills (PostID, DebtorID, AmountOwed, IsPaid, StatusNote, CreatedAt)
+                                                           VALUES (@PostID, @DebtorID, @AmountOwed, 0, N'Chưa đính kèm ảnh chuyển khoản', GETDATE());";
+                                    using (SqlCommand cmdSplit = new SqlCommand(insertSplit, conn))
+                                    {
+                                        cmdSplit.Parameters.AddWithValue("@PostID", newPostId);
+                                        cmdSplit.Parameters.AddWithValue("@DebtorID", debtorId);
+                                        cmdSplit.Parameters.AddWithValue("@AmountOwed", sharePerPerson);
+                                        cmdSplit.ExecuteNonQuery();
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show("Lỗi lưu CSDL: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                }
+
+                // Cập nhật lại giao diện Bảng tin
+
                 posts.Insert(0, new LocketPost
                 {
                     IsMine = true,
