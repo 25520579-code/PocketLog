@@ -18,12 +18,10 @@ namespace PocketLog.Server
         private TcpListener? tcpListener;
         private bool isRunning = false;
 
-        // Chuỗi kết nối LocalDB chuẩn từ code của Hưng
         private readonly string masterConnStr = @"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=master;Integrated Security=True";
         private readonly string dbConnStr = @"Data Source=(localdb)\MSSQLLocalDB;Initial Catalog=PocketLogDB;Integrated Security=True";
         private readonly string storageFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ServerStorage");
 
-        // Danh sách các kết nối Client đang Online (Client -> UserID)
         private readonly ConcurrentDictionary<TcpClient, int> connectedClients = new ConcurrentDictionary<TcpClient, int>();
 
         private Label lblStatus = null!;
@@ -149,7 +147,7 @@ namespace PocketLog.Server
         }
 
         // ====================================================================
-        // 1. TỰ ĐỘNG KHỞI TẠO CSDL 7 BẢNG CỦA HƯNG TRÊN (localdb)\MSSQLLocalDB
+        // 1. KHỞI TẠO CSDL 7 BẢNG & ĐẢM BẢO CÁC TÀI KHOẢN MẪU LUÔN CÓ SẴN
         // ====================================================================
         private void EnsureDatabaseSetup()
         {
@@ -228,25 +226,25 @@ namespace PocketLog.Server
                             PaidAt DATETIME NULL,
                             CreatedAt DATETIME DEFAULT GETDATE()
                         );
+                    END
 
-                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES
-                             ('huyhoang', '123', N'Huy Hoàng', 3500000),
-                             ('giahuy', '123', N'Gia Huy', 2500000),
-                            ('thehung', '123', N'Thế Hưng', 2000000),
-                               ('thanhthao', '123', N'Thanh Thảo', 3000000);
-
-                        INSERT INTO Friendships (RequesterID, AddresseeID, Status) VALUES
-                            (1, 2, 'Accepted'),
-                            (1, 3, 'Accepted'),
-                            (2, 3, 'Accepted');
-                    END";
+                    -- Đảm bảo các tài khoản mẫu luôn tồn tại trong bảng Users dù bảng đã được tạo từ trước
+                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'huyhoang')
+                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('huyhoang', '123', N'Huy Hoàng', 3500000);
+                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'giahuy')
+                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('giahuy', '123', N'Gia Huy', 2500000);
+                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'thehung')
+                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('thehung', '123', N'Thế Hưng', 2000000);
+                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'thanhthao')
+                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('thanhthao', '123', N'Thanh Thảo', 3000000);
+                    ";
 
                     using (SqlCommand cmd = new SqlCommand(schemaSql, conn))
                     {
                         cmd.ExecuteNonQuery();
                     }
                 }
-                Log("✓ Đã kết nối CSDL PocketLogDB (7 bảng chuẩn) trên LocalDB.");
+                Log("✓ Đã kết nối CSDL PocketLogDB và kiểm tra đầy đủ danh sách tài khoản.");
             }
             catch (Exception ex)
             {
@@ -255,7 +253,7 @@ namespace PocketLog.Server
         }
 
         // ====================================================================
-        // 2. KHỞI CHẠY TCP LISTENER LẮNG NGHE MỌI MÁY TRONG MẠNG LAN (PORT 8888)
+        // 2. TCP LISTENER PORT 8888
         // ====================================================================
         private void StartTcpServer()
         {
@@ -265,7 +263,7 @@ namespace PocketLog.Server
                 tcpListener.Start();
                 isRunning = true;
                 lblStatus.Text = "● SERVER ĐANG HOẠT ĐỘNG (PORT 8888)";
-                Log("✓ Đã mở cổng TCP 8888. Sẵn sàng nhận kết nối từ các Laptop...");
+                Log("✓ Đã mở cổng TCP 8888. Sẵn sàng nhận kết nối...");
 
                 Task.Run(async () =>
                 {
@@ -314,11 +312,12 @@ namespace PocketLog.Server
                 connectedClients.TryRemove(client, out _);
                 client.Close();
                 RefreshOnlineListUI();
+                await BroadcastRefreshToAllClientsAsync();
             }
         }
 
         // ====================================================================
-        // 3. XỬ LÝ GÓI TIN TCP VÀ TRUY VẤN SQL SERVER
+        // 3. XỬ LÝ GÓI TIN TCP
         // ====================================================================
         private async Task ProcessPacketAsync(TcpClient client, NetworkStream stream, TcpPacket packet)
         {
@@ -332,9 +331,11 @@ namespace PocketLog.Server
                         {
                             connectedClients[client] = res.UserId;
                             RefreshOnlineListUI();
-                            Log($"🔑 [{res.FullName}] đã đăng nhập thành công.");
+                            Log($"🔑 [{res.FullName}] (ID={res.UserId}) đã đăng nhập.");
                         }
                         await TcpPacketHelper.SendPacketAsync(stream, TcpPacket.Create(PacketType.LOGIN_RES, res));
+                        // Báo cho toàn bộ các máy đang mở cập nhật danh sách tài khoản & trạng thái Online
+                        await BroadcastRefreshToAllClientsAsync();
                         break;
                     }
 
@@ -409,18 +410,24 @@ namespace PocketLog.Server
         }
 
         // ====================================================================
-        // CÁC HÀM ĐỌC / GHI CSDL 7 BẢNG CỦA HƯNG
+        // 4. TRUY VẤN SQL: LỌC CHỈ BẠN BÈ MỚI THẤY BÀI NHAU & LẤY ĐỦ ACCOUNTS
         // ====================================================================
         private LoginResponseDto HandleLoginSql(LoginRequestDto req)
         {
-            string username = req.Username.Trim().ToLower();
+            string rawInput = req.Username.Trim();
+            string cleanUsername = rawInput.ToLower().Replace(" ", "");
+
             using (SqlConnection conn = new SqlConnection(dbConnStr))
             {
                 conn.Open();
-                string sql = "SELECT UserID, Username, FullName, MonthlyBudget FROM Users WHERE LOWER(Username) = @u";
+                // Tìm theo cả Username lẫn FullName để tránh tạo trùng tài khoản khi bấm chọn nhanh
+                string sql = @"SELECT TOP 1 UserID, Username, FullName, ISNULL(MonthlyBudget, 3500000) 
+                               FROM Users 
+                               WHERE LOWER(Username) = @u OR LOWER(Username) = @raw OR LOWER(FullName) = @raw";
                 using (SqlCommand cmd = new SqlCommand(sql, conn))
                 {
-                    cmd.Parameters.AddWithValue("@u", username);
+                    cmd.Parameters.AddWithValue("@u", cleanUsername);
+                    cmd.Parameters.AddWithValue("@raw", rawInput.ToLower());
                     using (SqlDataReader r = cmd.ExecuteReader())
                     {
                         if (r.Read())
@@ -438,21 +445,21 @@ namespace PocketLog.Server
                     }
                 }
 
-                // Nếu nhập tên mới chưa có trong bảng Users -> Tự động tạo tài khoản mới luôn để dễ test nhiều máy
                 string insertSql = @"INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
-                                     VALUES (@u, '123', @fn, 3500000);
+                                     VALUES (@u, @p, @fn, 3500000);
                                      SELECT SCOPE_IDENTITY();";
                 using (SqlCommand cmdNew = new SqlCommand(insertSql, conn))
                 {
-                    cmdNew.Parameters.AddWithValue("@u", username);
-                    cmdNew.Parameters.AddWithValue("@fn", req.Username.Trim());
+                    cmdNew.Parameters.AddWithValue("@u", cleanUsername);
+                    cmdNew.Parameters.AddWithValue("@p", string.IsNullOrEmpty(req.Password) ? "123" : req.Password);
+                    cmdNew.Parameters.AddWithValue("@fn", rawInput);
                     int newId = Convert.ToInt32(cmdNew.ExecuteScalar());
                     return new LoginResponseDto
                     {
                         Success = true,
                         UserId = newId,
-                        Username = username,
-                        FullName = req.Username.Trim(),
+                        Username = cleanUsername,
+                        FullName = rawInput,
                         MonthlyBudget = 3500000,
                         Message = "Created"
                     };
@@ -470,17 +477,17 @@ namespace PocketLog.Server
                 conn.Open();
 
                 // 1. Lấy hạn mức của user
-                using (SqlCommand cmdB = new SqlCommand("SELECT MonthlyBudget FROM Users WHERE UserID = @uid", conn))
+                using (SqlCommand cmdB = new SqlCommand("SELECT ISNULL(MonthlyBudget, 3500000) FROM Users WHERE UserID = @uid", conn))
                 {
                     cmdB.Parameters.AddWithValue("@uid", userId);
                     object? bObj = cmdB.ExecuteScalar();
                     if (bObj != null && bObj != DBNull.Value) res.MonthlyBudget = Convert.ToInt32(bObj);
                 }
 
-                // 2. Lấy danh sách bạn bè & gợi ý kết bạn
+                // 2. Lấy danh sách ID những người ĐÃ KẾT BẠN với userId
                 var friendIds = new HashSet<int>();
                 string friendSql = @"SELECT RequesterID, AddresseeID FROM Friendships
-                                     WHERE RequesterID = @uid OR AddresseeID = @uid";
+                                     WHERE (RequesterID = @uid OR AddresseeID = @uid) AND Status = 'Accepted'";
                 using (SqlCommand cmdF = new SqlCommand(friendSql, conn))
                 {
                     cmdF.Parameters.AddWithValue("@uid", userId);
@@ -495,7 +502,9 @@ namespace PocketLog.Server
                     }
                 }
 
-                using (SqlCommand cmdU = new SqlCommand("SELECT UserID, Username, FullName FROM Users WHERE UserID <> @uid", conn))
+                // 3. Lấy TẤT CẢ các tài khoản đang có trong bảng Users của Database
+                string allUsersSql = "SELECT UserID, Username, FullName FROM Users WHERE UserID <> @uid ORDER BY UserID ASC";
+                using (SqlCommand cmdU = new SqlCommand(allUsersSql, conn))
                 {
                     cmdU.Parameters.AddWithValue("@uid", userId);
                     using (SqlDataReader r = cmdU.ExecuteReader())
@@ -503,20 +512,28 @@ namespace PocketLog.Server
                         while (r.Read())
                         {
                             int uid = r.GetInt32(0);
+                            string uname = r["Username"]?.ToString() ?? "";
+                            string fname = r["FullName"]?.ToString() ?? uname;
+                            // Bỏ hậu tố "(Bạn)" nếu dữ liệu cũ từ script SQL có dính chữ "(Bạn)"
+                            fname = fname.Replace(" (Bạn)", "").Trim();
+
                             var fDto = new FriendDto
                             {
                                 UserId = uid,
-                                Username = "@" + r.GetString(1),
-                                FullName = r.GetString(2),
+                                Username = "@" + uname,
+                                FullName = fname,
                                 IsOnline = onlineUserIds.Contains(uid)
                             };
-                            if (friendIds.Contains(uid)) res.MyFriends.Add(fDto);
-                            else res.SuggestedUsers.Add(fDto);
+
+                            if (friendIds.Contains(uid))
+                                res.MyFriends.Add(fDto);
+                            else
+                                res.SuggestedUsers.Add(fDto);
                         }
                     }
                 }
 
-                // 3. Lấy danh sách bài đăng (ExpensePosts + ExpenseItems)
+                // 4. Lấy bài đăng: CHỈ LẤY BÀI CỦA BẢN THÂN HOẶC CỦA BẠN BÈ ĐÃ KẾT NỐI
                 string postSql = @"SELECT p.PostID, p.UserID, u.FullName, p.ImagePath, p.Caption, p.IsExpenseTracked, p.TotalAmount, p.CreatedAt,
                                           i.ItemName, i.Category
                                    FROM ExpensePosts p
@@ -528,15 +545,22 @@ namespace PocketLog.Server
                 {
                     while (r.Read())
                     {
+                        int authorId = r.GetInt32(1);
+
+                        // CHẶN BÀI ĐĂNG CỦA NGƯỜI LẠ: Chỉ cho phép bài của mình hoặc của bạn bè trong friendIds
+                        if (authorId != userId && !friendIds.Contains(authorId))
+                            continue;
+
                         int postId = r.GetInt32(0);
                         string imgPath = r["ImagePath"]?.ToString() ?? "";
                         DateTime createdAt = r["CreatedAt"] != DBNull.Value ? Convert.ToDateTime(r["CreatedAt"]) : DateTime.Now;
+                        string authorName = (r["FullName"]?.ToString() ?? "").Replace(" (Bạn)", "").Trim();
 
                         res.Posts.Add(new PostDto
                         {
                             PostId = postId,
-                            AuthorId = r.GetInt32(1),
-                            AuthorName = r.GetString(2),
+                            AuthorId = authorId,
+                            AuthorName = authorName,
                             ImageBase64 = ReadImageFileAsBase64(imgPath),
                             CaptionInside = r["Caption"]?.ToString() ?? "",
                             HasTag = r["IsExpenseTracked"] != DBNull.Value && Convert.ToBoolean(r["IsExpenseTracked"]),
@@ -548,7 +572,6 @@ namespace PocketLog.Server
                     }
                 }
 
-                // Điền danh sách bạn bè được tag vào từng PostDto
                 foreach (var post in res.Posts)
                 {
                     string tagSql = @"SELECT u.FullName FROM SplitBills s
@@ -559,12 +582,16 @@ namespace PocketLog.Server
                         cmdT.Parameters.AddWithValue("@pid", post.PostId);
                         using (SqlDataReader r = cmdT.ExecuteReader())
                         {
-                            while (r.Read()) post.TaggedFriends.Add(r.GetString(0));
+                            while (r.Read())
+                            {
+                                string taggedName = r.GetString(0).Replace(" (Bạn)", "").Trim();
+                                post.TaggedFriends.Add(taggedName);
+                            }
                         }
                     }
                 }
 
-                // 4. Lấy danh sách các khoản chia tiền (SplitBills) liên quan đến user
+                // 5. Lấy danh sách các khoản chia tiền liên quan đến user
                 string splitSql = @"SELECT s.SplitID, s.PostID, p.UserID AS CreditorID, uCred.FullName AS CreditorName,
                                            s.DebtorID, uDebt.FullName AS DebtorName,
                                            ISNULL(i.ItemName, p.Caption) AS Title, ISNULL(i.Category, N'🍜 Đồ ăn/Thức uống') AS Category,
@@ -585,8 +612,8 @@ namespace PocketLog.Server
                         {
                             string proofPath = r["ProofImagePath"] == DBNull.Value ? "" : r["ProofImagePath"].ToString()!;
                             DateTime created = r["CreatedAt"] != DBNull.Value ? Convert.ToDateTime(r["CreatedAt"]) : DateTime.Now;
-                            string credName = r.GetString(3);
-                            string debtName = r.GetString(5);
+                            string credName = r.GetString(3).Replace(" (Bạn)", "").Trim();
+                            string debtName = r.GetString(5).Replace(" (Bạn)", "").Trim();
 
                             res.SplitBills.Add(new SplitBillDto
                             {
@@ -684,7 +711,6 @@ namespace PocketLog.Server
                 int? targetId = GetUserIdByName(conn, kw);
                 if (!targetId.HasValue)
                 {
-                    // Tạo user mới nếu chưa tồn tại
                     string newU = @"INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
                                     VALUES (@u, '123', @fn, 3000000);
                                     SELECT SCOPE_IDENTITY();";
@@ -764,10 +790,16 @@ namespace PocketLog.Server
         private int? GetUserIdByName(SqlConnection conn, string nameOrHandle)
         {
             string clean = nameOrHandle.Trim().TrimStart('@').ToLower();
-            string sql = "SELECT TOP 1 UserID FROM Users WHERE LOWER(FullName) = @n OR LOWER(Username) = @n";
+            string noSpace = clean.Replace(" ", "");
+            string sql = @"SELECT TOP 1 UserID FROM Users 
+                           WHERE LOWER(FullName) = @n 
+                              OR LOWER(REPLACE(FullName, N' (Bạn)', '')) = @n
+                              OR LOWER(Username) = @n 
+                              OR LOWER(Username) = @ns";
             using (SqlCommand cmd = new SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@n", clean);
+                cmd.Parameters.AddWithValue("@ns", noSpace);
                 object? val = cmd.ExecuteScalar();
                 return val != null && val != DBNull.Value ? Convert.ToInt32(val) : (int?)null;
             }

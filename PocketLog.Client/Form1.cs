@@ -8,6 +8,8 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using AForge.Video;
+using AForge.Video.DirectShow;
 using Guna.UI2.WinForms;
 using PocketLog.Shared;
 
@@ -21,13 +23,12 @@ namespace PocketLog.Client
         private Guna2Button btnTabFeed, btnTabCamera, btnTabExpense, btnLogoutTop;
         private Label lblHeaderUser;
 
-        // Ngăn kéo Bạn bè trượt ngang
         private Panel pnlDrawerBackdrop;
         private Guna2Panel pnlFriendsDrawer;
         private System.Windows.Forms.Timer drawerTimer;
         private int drawerTargetX;
 
-        // Kết nối mạng TCP Client & Thông tin phiên đăng nhập
+        // Quản lý kết nối TCP
         private TcpClient? tcpClient;
         private NetworkStream? netStream;
         private readonly SemaphoreSlim sendLock = new SemaphoreSlim(1, 1);
@@ -39,7 +40,12 @@ namespace PocketLog.Client
         private string currentUsername = "";
         private string currentFullName = "";
 
-        // Bảng màu Clean Light UI
+        // Quản lý Webcam Laptop / PC
+        private VideoCaptureDevice? webcamDevice;
+        private bool isWebcamStreaming = false;
+        private Bitmap? latestWebcamFrame;
+        private readonly object frameLock = new object();
+
         private readonly Color clrAppBg = Color.FromArgb(245, 247, 246);
         private readonly Color clrCardBg = Color.White;
         private readonly Color clrPrimaryGreen = Color.FromArgb(29, 99, 76);
@@ -54,14 +60,15 @@ namespace PocketLog.Client
         private readonly Color clrTextMain = Color.FromArgb(28, 32, 30);
         private readonly Color clrTextMuted = Color.FromArgb(110, 118, 114);
 
-        private readonly (string Name, string Emoji)[] standardCategories = new[]
+        // Giữ nguyên Key lưu CSDL và thêm tên ngắn gọn để không bị tràn chữ trên nút bấm
+        private readonly (string Key, string ShortLabel, string Emoji)[] standardCategories = new[]
         {
-            ("🍜 Đồ ăn/Thức uống", "🍜"),
-            ("⛽ Xăng cộ", "⛽"),
-            ("👕 Quần áo", "👕"),
-            ("🏠 Tiền trọ", "🏠"),
-            ("🛒 Mua sắm", "🛒"),
-            ("📚 Học tập/Khác", "📚")
+            ("🍜 Đồ ăn/Thức uống", "🍜 Ăn uống", "🍜"),
+            ("⛽ Xăng cộ", "⛽ Xăng cộ", "⛽"),
+            ("👕 Quần áo", "👕 Quần áo", "👕"),
+            ("🏠 Tiền trọ", "🏠 Tiền trọ", "🏠"),
+            ("🛒 Mua sắm", "🛒 Mua sắm", "🛒"),
+            ("📚 Học tập/Khác", "📚 Học tập", "📚")
         };
 
         private class FriendUser
@@ -125,6 +132,11 @@ namespace PocketLog.Client
             InitDefaultCategoryBudgets();
             SetupPhoneShell();
             ShowAuthScreen();
+            this.FormClosing += (s, e) =>
+            {
+                StopWebcam();
+                CloseCurrentSocket();
+            };
         }
 
         private void InitDefaultCategoryBudgets()
@@ -151,7 +163,7 @@ namespace PocketLog.Client
             };
         }
 
-        private Guna2Button MakeBtn(string text, int x, int y, int w, int h, int radius, Color fill, Color fore, Color border, int borderThick = 1, float fontSize = 8.5F)
+        private Guna2Button MakeBtn(string text, int x, int y, int w, int h, int radius, Color fill, Color fore, Color border, int borderThick = 1, float fontSize = 8.2F)
         {
             return new Guna2Button
             {
@@ -164,6 +176,8 @@ namespace PocketLog.Client
                 BorderColor = border,
                 BorderThickness = borderThick,
                 Font = new Font("Segoe UI", fontSize, FontStyle.Bold),
+                TextOffset = Point.Empty,
+                Padding = Padding.Empty,
                 BackColor = Color.Transparent,
                 Cursor = Cursors.Hand
             };
@@ -187,12 +201,12 @@ namespace PocketLog.Client
 
             pnlHeader = new Guna2Panel { Dock = DockStyle.Top, Height = 52, FillColor = clrCardBg };
             pnlHeader.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = clrBorderLight });
-            pnlHeader.Controls.Add(MakeLabel("● PocketLog", 16, 13, 12.5F, FontStyle.Bold, clrPrimaryGreen));
+            pnlHeader.Controls.Add(MakeLabel("● PocketLog", 14, 15, 11F, FontStyle.Bold, clrPrimaryGreen));
 
-            lblHeaderUser = MakeLabel("", 138, 17, 8.5F, FontStyle.Bold, clrIndigo);
+            lblHeaderUser = MakeLabel("", 130, 17, 8.2F, FontStyle.Bold, clrIndigo);
             pnlHeader.Controls.Add(lblHeaderUser);
 
-            btnLogoutTop = MakeBtn("Đăng xuất", 248, 12, 76, 28, 8, clrBadgeOrangeBg, clrBadgeOrangeTxt, Color.Transparent, 0, 7.8F);
+            btnLogoutTop = MakeBtn("Đăng xuất", 232, 11, 94, 30, 8, clrBadgeOrangeBg, clrBadgeOrangeTxt, Color.Transparent, 0, 7.6F);
             btnLogoutTop.Visible = false;
             btnLogoutTop.Click += (s, e) => DisconnectAndLogout();
             pnlHeader.Controls.Add(btnLogoutTop);
@@ -222,9 +236,9 @@ namespace PocketLog.Client
             pnlBottomNav = new Guna2Panel { Dock = DockStyle.Bottom, Height = 74, FillColor = clrCardBg, Visible = false };
             pnlBottomNav.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = clrBorderLight });
 
-            btnTabFeed = MakeBtn("Bảng tin", 14, 14, 114, 46, 23, clrCardBg, clrTextMain, clrBorderLight, 1, 8.8F);
-            btnTabCamera = MakeBtn("Chụp ảnh", 136, 14, 114, 46, 23, clrCardBg, clrTextMain, clrBorderLight, 1, 8.8F);
-            btnTabExpense = MakeBtn("Quản lý chi tiêu", 258, 14, 148, 46, 23, clrCardBg, clrTextMain, clrBorderLight, 1, 8.8F);
+            btnTabFeed = MakeBtn("Bảng tin", 14, 14, 114, 46, 23, clrCardBg, clrTextMain, clrBorderLight, 1, 8.5F);
+            btnTabCamera = MakeBtn("Chụp ảnh", 136, 14, 114, 46, 23, clrCardBg, clrTextMain, clrBorderLight, 1, 8.5F);
+            btnTabExpense = MakeBtn("Quản lý chi tiêu", 258, 14, 148, 46, 23, clrCardBg, clrTextMain, clrBorderLight, 1, 8.5F);
 
             btnTabFeed.Click += (s, e) => { activeTabName = "FEED"; ActivateMenu(btnTabFeed, BuildFeedScreen()); };
             btnTabCamera.Click += (s, e) => { activeTabName = "CAMERA"; ActivateMenu(btnTabCamera, BuildCameraScreen()); };
@@ -243,6 +257,12 @@ namespace PocketLog.Client
 
         private void ActivateMenu(Guna2Button selectedBtn, Control screenContent)
         {
+            // Nếu rời khỏi tab Chụp ảnh thì tự động tắt Webcam để giải phóng thiết bị
+            if (selectedBtn != btnTabCamera)
+            {
+                StopWebcam();
+            }
+
             foreach (var btn in new[] { btnTabFeed, btnTabCamera, btnTabExpense })
             {
                 btn.FillColor = clrCardBg;
@@ -261,10 +281,123 @@ namespace PocketLog.Client
         }
 
         // ====================================================================
-        // MÀN HÌNH 0: ĐĂNG NHẬP / ĐĂNG KÝ & NHẬP IP SERVER TCP
+        // BỘ ĐIỀU KHIỂN CAMERA LAPTOP / PC (LIVE STREAM & SNAPSHOT)
+        // ====================================================================
+        private bool StartWebcam(PictureBox targetPictureBox, Label lblStatusOverlay, Control captionOverlay)
+        {
+            StopWebcam();
+            try
+            {
+                var videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
+                if (videoDevices.Count == 0)
+                {
+                    lblStatusOverlay.Text = "⚠ Không tìm thấy Camera trên máy!\n(Bạn vẫn có thể bấm nút Chọn ảnh ở dưới)";
+                    lblStatusOverlay.Visible = true;
+                    return false;
+                }
+
+                webcamDevice = new VideoCaptureDevice(videoDevices[0].MonikerString);
+                webcamDevice.NewFrame += (sender, eventArgs) =>
+                {
+                    try
+                    {
+                        using Bitmap raw = (Bitmap)eventArgs.Frame.Clone();
+                        // Lật ngang khung hình như gương giống camera Locket trên điện thoại
+                        raw.RotateFlip(RotateFlipType.RotateNoneFlipX);
+                        Bitmap frameForStorage = (Bitmap)raw.Clone();
+                        Bitmap frameForUi = (Bitmap)raw.Clone();
+
+                        lock (frameLock)
+                        {
+                            latestWebcamFrame?.Dispose();
+                            latestWebcamFrame = frameForStorage;
+                        }
+
+                        if (targetPictureBox.IsHandleCreated && !targetPictureBox.IsDisposed)
+                        {
+                            targetPictureBox.BeginInvoke(new Action(() =>
+                            {
+                                if (isWebcamStreaming && !targetPictureBox.IsDisposed)
+                                {
+                                    Image? oldImg = targetPictureBox.Image;
+                                    targetPictureBox.Image = frameForUi;
+                                    targetPictureBox.Visible = true;
+                                    if (captionOverlay.Parent != targetPictureBox)
+                                    {
+                                        targetPictureBox.Controls.Add(captionOverlay);
+                                    }
+                                    oldImg?.Dispose();
+                                }
+                                else
+                                {
+                                    frameForUi.Dispose();
+                                }
+                            }));
+                        }
+                        else
+                        {
+                            frameForUi.Dispose();
+                        }
+                    }
+                    catch { }
+                };
+
+                isWebcamStreaming = true;
+                webcamDevice.Start();
+                lblStatusOverlay.Visible = false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                lblStatusOverlay.Text = "⚠ Không thể mở Camera: " + ex.Message;
+                lblStatusOverlay.Visible = true;
+                return false;
+            }
+        }
+
+        private Bitmap? CaptureSnapshotFromWebcam()
+        {
+            Bitmap? snap = null;
+            lock (frameLock)
+            {
+                if (latestWebcamFrame != null)
+                {
+                    snap = (Bitmap)latestWebcamFrame.Clone();
+                }
+            }
+            StopWebcam();
+            return snap;
+        }
+
+        private void StopWebcam()
+        {
+            isWebcamStreaming = false;
+            try
+            {
+                if (webcamDevice != null)
+                {
+                    if (webcamDevice.IsRunning)
+                    {
+                        webcamDevice.SignalToStop();
+                    }
+                    webcamDevice = null;
+                }
+            }
+            catch { }
+
+            lock (frameLock)
+            {
+                latestWebcamFrame?.Dispose();
+                latestWebcamFrame = null;
+            }
+        }
+
+        // ====================================================================
+        // MÀN HÌNH 0: ĐĂNG NHẬP / ĐĂNG KÝ & NHẬP IP SERVER
         // ====================================================================
         private void ShowAuthScreen()
         {
+            StopWebcam();
             activeTabName = "AUTH";
             pnlBottomNav.Visible = false;
             btnLogoutTop.Visible = false;
@@ -273,7 +406,6 @@ namespace PocketLog.Client
             Panel root = new Panel { BackColor = clrAppBg, Dock = DockStyle.Fill };
             bool isRegisterMode = false;
 
-            // Banner giới thiệu đầu trang
             Guna2Panel pnlHero = new Guna2Panel
             {
                 Location = new Point(22, 16),
@@ -282,10 +414,9 @@ namespace PocketLog.Client
                 FillColor = clrPrimaryGreen
             };
             pnlHero.Controls.Add(MakeLabel("📸 PocketLog Locket & Bill", 18, 16, 13.5F, FontStyle.Bold, Color.White));
-            pnlHero.Controls.Add(MakeLabel("Chia sẻ khoảnh khắc & quản lý chi tiêu qua TCP Socket", 18, 48, 8.5F, FontStyle.Regular, clrSoftGreenBg));
+            pnlHero.Controls.Add(MakeLabel("Chia sẻ khoảnh khắc & quản lý chi tiêu qua TCP Socket", 18, 48, 8.2F, FontStyle.Regular, clrSoftGreenBg));
             root.Controls.Add(pnlHero);
 
-            // Thẻ Cấu hình mạng TCP Server (IP + Port)
             Guna2Panel cardServer = new Guna2Panel
             {
                 Location = new Point(22, 120),
@@ -295,8 +426,8 @@ namespace PocketLog.Client
                 BorderColor = clrSoftGreenBorder,
                 BorderThickness = 1
             };
-            cardServer.Controls.Add(MakeLabel("🌐 Kết nối Máy chủ (TCP Server Host)", 14, 10, 9.2F, FontStyle.Bold, clrPrimaryGreen));
-            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 nếu cùng máy, hoặc IP LAN của máy chủ:", 14, 31, 8F, FontStyle.Regular, clrTextMuted));
+            cardServer.Controls.Add(MakeLabel("🌐 Kết nối Máy chủ (TCP Server Host)", 14, 10, 9F, FontStyle.Bold, clrPrimaryGreen));
+            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 nếu cùng máy, hoặc IP LAN của máy chủ:", 14, 31, 7.8F, FontStyle.Regular, clrTextMuted));
 
             Guna2TextBox txtServerIp = new Guna2TextBox
             {
@@ -325,7 +456,6 @@ namespace PocketLog.Client
             cardServer.Controls.Add(txtServerPort);
             root.Controls.Add(cardServer);
 
-            // Thẻ Đăng nhập / Đăng ký
             Guna2Panel cardAuth = new Guna2Panel
             {
                 Location = new Point(22, 234),
@@ -336,15 +466,14 @@ namespace PocketLog.Client
                 BorderThickness = 1
             };
 
-            // 2 nút chuyển tab: Đăng nhập | Đăng ký
-            var btnModeLogin = MakeBtn("Đăng nhập", 14, 14, 170, 38, 12, clrPrimaryGreen, Color.White, clrPrimaryGreen, 1, 9.2F);
-            var btnModeReg = MakeBtn("Đăng ký tài khoản", 192, 14, 170, 38, 12, clrAppBg, clrTextMain, clrBorderLight, 1, 9.2F);
+            var btnModeLogin = MakeBtn("Đăng nhập", 14, 14, 170, 38, 12, clrPrimaryGreen, Color.White, clrPrimaryGreen, 1, 9F);
+            var btnModeReg = MakeBtn("Đăng ký tài khoản", 192, 14, 170, 38, 12, clrAppBg, clrTextMain, clrBorderLight, 1, 9F);
 
-            Label lblUserTitle = MakeLabel("Tên đăng nhập / Hiển thị:", 14, 64, 8.8F, FontStyle.Bold, clrTextMain);
+            Label lblUserTitle = MakeLabel("Tên đăng nhập / MSSV:", 14, 64, 8.8F, FontStyle.Bold, clrTextMain);
             Guna2TextBox txtUsername = new Guna2TextBox
             {
                 Text = "Huy Hoàng",
-                PlaceholderText = "Nhập tên tài khoản (VD: Huy Hoàng)...",
+                PlaceholderText = "Nhập tên hoặc MSSV (VD: 25520579)...",
                 Location = new Point(14, 86),
                 Size = new Size(348, 38),
                 BorderRadius = 10,
@@ -365,7 +494,6 @@ namespace PocketLog.Client
                 Font = new Font("Segoe UI", 9.5F)
             };
 
-            // Ô ngân sách khởi tạo (Hiện thêm khi chọn tab Đăng ký)
             Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ):", 14, 200, 8.5F, FontStyle.Bold, clrIndigo);
             Guna2TextBox txtInitBudget = new Guna2TextBox
             {
@@ -379,17 +507,16 @@ namespace PocketLog.Client
             };
             lblInitBudget.Visible = false;
 
-            // Bộ chọn nhanh tài khoản demo (Hiện khi ở tab Đăng nhập)
             Label lblQuickPick = MakeLabel("⚡ Chọn nhanh tài khoản test nhiều cửa sổ:", 14, 202, 8.2F, FontStyle.Bold, clrIndigo);
-            var btnPickHoang = MakeBtn("Huy Hoàng", 14, 224, 110, 32, 10, clrSoftIndigo, clrIndigo, clrIndigo, 1, 8.2F);
-            var btnPickHuy = MakeBtn("Gia Huy", 132, 224, 110, 32, 10, clrAppBg, clrTextMain, clrBorderLight, 1, 8.2F);
-            var btnPickKhoa = MakeBtn("Thế Hưng", 250, 224, 112, 32, 10, clrAppBg, clrTextMain, clrBorderLight, 1, 8.2F);
+            var btnPickHoang = MakeBtn("Huy Hoàng", 14, 224, 110, 32, 10, clrSoftIndigo, clrIndigo, clrIndigo, 1, 8F);
+            var btnPickHuy = MakeBtn("Gia Huy", 132, 224, 110, 32, 10, clrAppBg, clrTextMain, clrBorderLight, 1, 8F);
+            var btnPickHung = MakeBtn("Thế Hưng", 250, 224, 112, 32, 10, clrAppBg, clrTextMain, clrBorderLight, 1, 8F);
 
             Action<Guna2Button, string> selectQuickAccount = (btnPicked, accName) =>
             {
                 txtUsername.Text = accName;
                 txtPassword.Text = "123";
-                foreach (var b in new[] { btnPickHoang, btnPickHuy, btnPickKhoa })
+                foreach (var b in new[] { btnPickHoang, btnPickHuy, btnPickHung })
                 {
                     b.FillColor = clrAppBg;
                     b.ForeColor = clrTextMain;
@@ -402,11 +529,11 @@ namespace PocketLog.Client
 
             btnPickHoang.Click += (s, e) => selectQuickAccount(btnPickHoang, "Huy Hoàng");
             btnPickHuy.Click += (s, e) => selectQuickAccount(btnPickHuy, "Gia Huy");
-            btnPickKhoa.Click += (s, e) => selectQuickAccount(btnPickKhoa, "Thế Hưng");
+            btnPickHung.Click += (s, e) => selectQuickAccount(btnPickHung, "Thế Hưng");
 
-            Label lblAuthStatus = MakeLabel("💡 Hãy bật PocketLog.Server trước khi bấm Kết nối.", 14, 268, 8.2F, FontStyle.Italic, clrTextMuted);
+            Label lblAuthStatus = MakeLabel("💡 Hãy bật PocketLog.Server trước khi bấm Kết nối.", 14, 268, 8F, FontStyle.Italic, clrTextMuted);
 
-            var btnSubmitAuth = MakeBtn("🚀 Kết nối TCP & Đăng nhập", 14, 298, 348, 50, 14, clrPrimaryGreen, Color.White, clrSoftGreenBorder, 2, 10.5F);
+            var btnSubmitAuth = MakeBtn("🚀 Kết nối TCP & Đăng nhập", 14, 298, 348, 50, 14, clrPrimaryGreen, Color.White, clrSoftGreenBorder, 2, 10F);
 
             btnModeLogin.Click += (s, e) =>
             {
@@ -421,7 +548,7 @@ namespace PocketLog.Client
                 lblQuickPick.Visible = true;
                 btnPickHoang.Visible = true;
                 btnPickHuy.Visible = true;
-                btnPickKhoa.Visible = true;
+                btnPickHung.Visible = true;
                 btnSubmitAuth.Text = "🚀 Kết nối TCP & Đăng nhập";
             };
 
@@ -436,7 +563,7 @@ namespace PocketLog.Client
                 lblQuickPick.Visible = false;
                 btnPickHoang.Visible = false;
                 btnPickHuy.Visible = false;
-                btnPickKhoa.Visible = false;
+                btnPickHung.Visible = false;
                 lblInitBudget.Visible = true;
                 txtInitBudget.Visible = true;
                 txtUsername.Text = "";
@@ -476,7 +603,7 @@ namespace PocketLog.Client
                 lblUserTitle, txtUsername,
                 lblPassTitle, txtPassword,
                 lblInitBudget, txtInitBudget,
-                lblQuickPick, btnPickHoang, btnPickHuy, btnPickKhoa,
+                lblQuickPick, btnPickHoang, btnPickHuy, btnPickHung,
                 lblAuthStatus, btnSubmitAuth
             });
 
@@ -486,7 +613,7 @@ namespace PocketLog.Client
         }
 
         // ====================================================================
-        // XỬ LÝ KẾT NỐI TCP CLIENT & LẮNG NGHE GÓI TIN TỪ SERVER
+        // KẾT NỐI TCP CLIENT & NHẬN DỮ LIỆU ĐỒNG BỘ
         // ====================================================================
         private async Task<bool> ConnectAndAuthenticateAsync(string ip, int port, string username, string password, bool isRegister, string initBudgetStr, Label lblStatus)
         {
@@ -511,10 +638,8 @@ namespace PocketLog.Client
                 currentServerIp = ip;
                 currentServerPort = port;
 
-                // Bắt đầu luồng lắng nghe gói tin từ Server trả về
                 _ = Task.Run(() => ListenFromServerLoopAsync());
 
-                // Gửi gói tin LOGIN_REQ (Server sẽ tự tạo tài khoản mới nếu chưa tồn tại)
                 var loginReq = new LoginRequestDto { Username = username, Password = password };
                 await SendPacketSafeAsync(TcpPacket.Create(PacketType.LOGIN_REQ, loginReq));
 
@@ -541,10 +666,7 @@ namespace PocketLog.Client
             {
                 await TcpPacketHelper.SendPacketAsync(netStream, packet);
             }
-            catch
-            {
-                // Nếu mất kết nối
-            }
+            catch { }
             finally
             {
                 sendLock.Release();
@@ -581,7 +703,6 @@ namespace PocketLog.Client
                                         ActivateMenu(btnTabFeed, BuildFeedScreen());
                                     }));
 
-                                    // Xin ngay dữ liệu đồng bộ từ CSDL của Server
                                     await SendPacketSafeAsync(TcpPacket.Create(PacketType.SYNC_REQ, currentUserId));
                                 }
                                 break;
@@ -599,7 +720,6 @@ namespace PocketLog.Client
 
                         case PacketType.REFRESH_BROADCAST:
                             {
-                                // Khi có bất kỳ máy nào đăng ảnh, kết bạn hoặc xác nhận bill -> tự động xin dữ liệu mới
                                 if (currentUserId > 0)
                                 {
                                     await SendPacketSafeAsync(TcpPacket.Create(PacketType.SYNC_REQ, currentUserId));
@@ -609,10 +729,7 @@ namespace PocketLog.Client
                     }
                 }
             }
-            catch
-            {
-                // Socket đóng
-            }
+            catch { }
         }
 
         private void ApplySyncedDataToUI(SyncDataResponseDto data)
@@ -688,7 +805,6 @@ namespace PocketLog.Client
                 });
             }
 
-            // Vẽ lại màn hình đang mở (trừ màn hình Chụp ảnh để không làm mất chữ người dùng đang gõ)
             if (activeTabName == "FEED")
                 ActivateMenu(btnTabFeed, BuildFeedScreen());
             else if (activeTabName == "EXPENSE")
@@ -700,6 +816,7 @@ namespace PocketLog.Client
 
         private void DisconnectAndLogout()
         {
+            StopWebcam();
             CloseCurrentSocket();
             currentUserId = 0;
             currentFullName = "";
@@ -716,14 +833,14 @@ namespace PocketLog.Client
         }
 
         // ====================================================================
-        // NGĂN KÉO DANH SÁCH BẠN BÈ & TÌM KIẾM KẾT BẠN QUA TCP
+        // NGĂN KÉO BẠN BÈ
         // ====================================================================
         private void SetupFriendsDrawer()
         {
             pnlDrawerBackdrop = new Panel
             {
                 Location = new Point(0, 52),
-                Size = new Size(420, 768),
+                Size = new Size(420, 694),
                 BackColor = Color.FromArgb(222, 230, 226),
                 Visible = false
             };
@@ -732,7 +849,7 @@ namespace PocketLog.Client
             pnlFriendsDrawer = new Guna2Panel
             {
                 Location = new Point(420, 0),
-                Size = new Size(344, 768),
+                Size = new Size(344, 694),
                 FillColor = clrCardBg,
                 BorderColor = clrSoftGreenBorder,
                 BorderThickness = 2
@@ -763,6 +880,11 @@ namespace PocketLog.Client
 
         private void OpenFriendsDrawer()
         {
+            if (currentUserId > 0)
+            {
+                _ = SendPacketSafeAsync(TcpPacket.Create(PacketType.SYNC_REQ, currentUserId));
+            }
+
             RenderFriendsDrawerContent("");
             pnlDrawerBackdrop.Visible = true;
             pnlDrawerBackdrop.BringToFront();
@@ -780,7 +902,7 @@ namespace PocketLog.Client
         private void RenderFriendsDrawerContent(string keyword)
         {
             pnlFriendsDrawer.Controls.Clear();
-            pnlFriendsDrawer.Controls.Add(MakeLabel($"👥 Danh sách bạn bè ({myFriends.Count})", 16, 16, 11.5F, FontStyle.Bold, clrTextMain));
+            pnlFriendsDrawer.Controls.Add(MakeLabel("👥 Kết bạn & Danh bạ CSDL", 16, 16, 11F, FontStyle.Bold, clrTextMain));
 
             var btnClose = MakeBtn("✕", 294, 12, 34, 32, 10, clrAppBg, clrTextMain, clrBorderLight);
             btnClose.Click += (s, e) => CloseFriendsDrawer();
@@ -789,8 +911,8 @@ namespace PocketLog.Client
             Guna2TextBox txtSearch = new Guna2TextBox
             {
                 Text = keyword,
-                PlaceholderText = "🔍 Nhập tên bạn bè để kết bạn...",
-                Location = new Point(16, 54),
+                PlaceholderText = "🔍 Tìm hoặc nhập tên tài khoản...",
+                Location = new Point(16, 52),
                 Size = new Size(216, 36),
                 BorderRadius = 10,
                 FillColor = clrAppBg,
@@ -798,8 +920,15 @@ namespace PocketLog.Client
                 Font = new Font("Segoe UI", 8.8F)
             };
 
-            var btnAddNew = MakeBtn("+ Kết bạn", 238, 54, 90, 36, 10, clrPrimaryGreen, Color.White, clrSoftGreenBorder);
-            Panel listScroll = new Panel { Location = new Point(16, 100), Size = new Size(312, 650), AutoScroll = true };
+            var btnAddNew = MakeBtn("+ Kết bạn", 238, 52, 90, 36, 10, clrPrimaryGreen, Color.White, clrSoftGreenBorder);
+
+            Panel listScroll = new Panel
+            {
+                Location = new Point(14, 96),
+                Size = new Size(318, 580),
+                AutoScroll = true
+            };
+            listScroll.MouseEnter += (s, e) => listScroll.Focus();
 
             Action<string> refreshList = (kw) =>
             {
@@ -807,12 +936,36 @@ namespace PocketLog.Client
                 string q = (kw ?? "").Trim().ToLower();
                 int y = 4;
 
-                listScroll.Controls.Add(MakeLabel("Gợi ý người dùng trên Server", 2, y, 8.8F, FontStyle.Bold, clrIndigo));
+                var filteredFriends = myFriends
+                    .Where(f => string.IsNullOrEmpty(q) || f.Name.ToLower().Contains(q) || f.Handle.ToLower().Contains(q))
+                    .ToList();
+
+                listScroll.Controls.Add(MakeLabel($"✓ Bạn bè đã kết nối ({filteredFriends.Count}) - Thấy bài nhau", 2, y, 8.2F, FontStyle.Bold, clrPrimaryGreen));
                 y += 22;
 
+                if (filteredFriends.Count == 0)
+                {
+                    listScroll.Controls.Add(MakeLabel("Chưa có bạn bè. Bấm '+ Kết bạn' ở danh sách dưới!", 4, y, 7.8F, FontStyle.Italic, clrTextMuted));
+                    y += 26;
+                }
+                else
+                {
+                    foreach (var fUser in filteredFriends)
+                    {
+                        var card = BuildFriendItemRow(fUser, true, null);
+                        card.Location = new Point(0, y);
+                        listScroll.Controls.Add(card);
+                        y += 56;
+                    }
+                }
+
+                y += 10;
                 var sugs = friendSuggestions
                     .Where(u => string.IsNullOrEmpty(q) || u.Name.ToLower().Contains(q) || u.Handle.ToLower().Contains(q))
                     .ToList();
+
+                listScroll.Controls.Add(MakeLabel($"🌐 Tất cả tài khoản khác trong Database ({sugs.Count})", 2, y, 8.2F, FontStyle.Bold, clrIndigo));
+                y += 22;
 
                 foreach (var sUser in sugs)
                 {
@@ -829,17 +982,7 @@ namespace PocketLog.Client
                     y += 56;
                 }
 
-                y += 8;
-                listScroll.Controls.Add(MakeLabel("Bạn bè đã kết nối (Có thể tag chia tiền)", 2, y, 8.8F, FontStyle.Bold, clrPrimaryGreen));
-                y += 22;
-
-                foreach (var fUser in myFriends.Where(f => string.IsNullOrEmpty(q) || f.Name.ToLower().Contains(q) || f.Handle.ToLower().Contains(q)))
-                {
-                    var card = BuildFriendItemRow(fUser, true, null);
-                    card.Location = new Point(0, y);
-                    listScroll.Controls.Add(card);
-                    y += 56;
-                }
+                listScroll.Controls.Add(new Label { Location = new Point(0, y), Size = new Size(10, 20) });
             };
 
             txtSearch.TextChanged += (s, e) => refreshList(txtSearch.Text);
@@ -863,7 +1006,7 @@ namespace PocketLog.Client
         {
             Guna2Panel row = new Guna2Panel
             {
-                Size = new Size(308, 50),
+                Size = new Size(296, 50),
                 BorderRadius = 12,
                 FillColor = isFriend ? clrAppBg : clrSoftIndigo,
                 BorderColor = isFriend ? clrBorderLight : Color.FromArgb(180, 188, 240),
@@ -874,31 +1017,31 @@ namespace PocketLog.Client
             {
                 Text = string.IsNullOrEmpty(u.Name) ? "U" : u.Name.Substring(0, 1).ToUpper(),
                 Size = new Size(32, 32),
-                Location = new Point(10, 9),
+                Location = new Point(8, 9),
                 FillColor = isFriend ? clrPrimaryGreen : clrIndigo,
                 ForeColor = Color.White,
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold)
             };
 
             row.Controls.Add(avt);
-            row.Controls.Add(MakeLabel(u.Name, 48, 7, 9F, FontStyle.Bold, clrTextMain));
-            row.Controls.Add(MakeLabel($"{u.Handle} • {(u.IsOnline ? "🟢 Đang online" : "⚪ Offline")}", 48, 26, 7.8F, FontStyle.Regular, u.IsOnline ? clrPrimaryGreen : clrTextMuted));
+            row.Controls.Add(MakeLabel(u.Name, 46, 7, 8.8F, FontStyle.Bold, clrTextMain));
+            row.Controls.Add(MakeLabel($"{u.Handle} • {(u.IsOnline ? "🟢 Online" : "⚪ Offline")}", 46, 26, 7.6F, FontStyle.Regular, u.IsOnline ? clrPrimaryGreen : clrTextMuted));
 
             if (!isFriend && onAdd != null)
             {
-                var btn = MakeBtn("+ Kết bạn", 218, 10, 80, 30, 8, clrIndigo, Color.White, clrIndigo, 1, 7.8F);
+                var btn = MakeBtn("+ Kết bạn", 204, 10, 84, 30, 8, clrIndigo, Color.White, clrIndigo, 1, 7.6F);
                 btn.Click += (s, e) => onAdd();
                 row.Controls.Add(btn);
             }
             else
             {
-                row.Controls.Add(MakeBtn("✓ Bạn bè", 222, 11, 76, 28, 8, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.8F));
+                row.Controls.Add(MakeBtn("✓ Bạn bè", 208, 11, 80, 28, 8, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.6F));
             }
             return row;
         }
 
         // ====================================================================
-        // MÀN HÌNH 1: BẢNG TIN (ẢNH GẦN NHẤT CỦA BẢN THÂN + BẢNG TIN BẠN BÈ)
+        // MÀN HÌNH 1: BẢNG TIN
         // ====================================================================
         private Control BuildFeedScreen()
         {
@@ -906,12 +1049,12 @@ namespace PocketLog.Client
             root.MouseEnter += (s, e) => root.Focus();
             int y = 12;
 
-            root.Controls.Add(MakeLabel("Ảnh gần đây nhất", 20, y + 4, 11.5F, FontStyle.Bold, clrTextMain));
+            root.Controls.Add(MakeLabel("Ảnh mới nhất", 20, y + 4, 10.5F, FontStyle.Bold, clrTextMain));
 
-            var btnGallery = MakeBtn("Kho ảnh ›", 174, y, 88, 28, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8F);
+            var btnGallery = MakeBtn("Kho ảnh ›", 150, y, 90, 28, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.8F);
             btnGallery.Click += (s, e) => OpenMyGalleryScreen();
 
-            var btnFriendsTop = MakeBtn($"👥 Bạn bè ({myFriends.Count}) ›", 268, y, 126, 28, 14, clrSoftIndigo, clrIndigo, clrIndigo, 1, 8F);
+            var btnFriendsTop = MakeBtn($"👥 Bạn bè ({myFriends.Count}) ›", 246, y, 148, 28, 14, clrSoftIndigo, clrIndigo, clrIndigo, 1, 7.8F);
             btnFriendsTop.Click += (s, e) => OpenFriendsDrawer();
 
             root.Controls.Add(btnGallery);
@@ -939,7 +1082,7 @@ namespace PocketLog.Client
                     Cursor = Cursors.Hand
                 };
                 emptyMine.Controls.Add(MakeLabel("📷 Bạn chưa đăng tấm ảnh nào", 82, 24, 9.5F, FontStyle.Bold, clrPrimaryGreen));
-                emptyMine.Controls.Add(MakeLabel("Bấm sang tab 'Chụp ảnh' để đăng khoảnh khắc đầu tiên!", 46, 50, 8.2F, FontStyle.Regular, clrTextMuted));
+                emptyMine.Controls.Add(MakeLabel("Bấm sang tab 'Chụp ảnh' để chụp bằng Camera!", 52, 50, 8.2F, FontStyle.Regular, clrTextMuted));
                 emptyMine.Click += (s, e) => { activeTabName = "CAMERA"; ActivateMenu(btnTabCamera, BuildCameraScreen()); };
                 root.Controls.Add(emptyMine);
                 y += 110;
@@ -966,12 +1109,34 @@ namespace PocketLog.Client
             root.Controls.Add(divider);
             y += 44;
 
-            foreach (var fp in posts.Where(p => !p.IsMine))
+            var friendPosts = posts.Where(p => !p.IsMine).ToList();
+            if (friendPosts.Count == 0)
             {
-                var card = CreateLocketPostCard(fp, false);
-                card.Location = new Point(20, y);
-                root.Controls.Add(card);
-                y += card.Height + 16;
+                Guna2Panel noFriendPostBox = new Guna2Panel
+                {
+                    Location = new Point(20, y),
+                    Size = new Size(374, 92),
+                    BorderRadius = 16,
+                    FillColor = clrCardBg,
+                    BorderColor = clrBorderLight,
+                    BorderThickness = 1,
+                    Cursor = Cursors.Hand
+                };
+                noFriendPostBox.Controls.Add(MakeLabel("🔒 Chưa có bài đăng nào từ bạn bè", 74, 20, 9.5F, FontStyle.Bold, clrIndigo));
+                noFriendPostBox.Controls.Add(MakeLabel("Bấm vào '👥 Bạn bè' ở góc trên để kết bạn mới thấy bài nhau!", 26, 48, 8F, FontStyle.Regular, clrTextMuted));
+                noFriendPostBox.Click += (s, e) => OpenFriendsDrawer();
+                root.Controls.Add(noFriendPostBox);
+                y += 108;
+            }
+            else
+            {
+                foreach (var fp in friendPosts)
+                {
+                    var card = CreateLocketPostCard(fp, false);
+                    card.Location = new Point(20, y);
+                    root.Controls.Add(card);
+                    y += card.Height + 16;
+                }
             }
 
             root.Controls.Add(new Label { Location = new Point(0, y), Size = new Size(10, 20) });
@@ -1009,24 +1174,28 @@ namespace PocketLog.Client
                 : "📷 Ảnh khoảnh khắc (Không gắn tag)";
 
             card.Controls.Add(avatar);
-            card.Controls.Add(MakeLabel($"{post.Author} • {post.Time}", 56, 10, 9.2F, FontStyle.Bold, clrTextMain));
-            card.Controls.Add(MakeLabel(topText, 56, 30, 8F, FontStyle.Bold, post.HasTag ? clrPrimaryGreen : clrTextMuted));
+            card.Controls.Add(MakeLabel($"{post.Author} • {post.Time}", 56, 10, 9F, FontStyle.Bold, clrTextMain));
+            card.Controls.Add(MakeLabel(topText, 56, 30, 7.8F, FontStyle.Bold, post.HasTag ? clrPrimaryGreen : clrTextMuted));
 
             Guna2Panel photoFrame = new Guna2Panel
             {
                 Location = new Point(14, 56),
                 Size = new Size(346, 284),
                 BorderRadius = 20,
-                FillColor = post.PhotoBg,
+                FillColor = post.CustomImage != null ? clrCardBg : post.PhotoBg,
                 BorderColor = clrBorderLight,
                 BorderThickness = 1,
                 Cursor = isMyTopCard ? Cursors.Hand : Cursors.Default
             };
 
+            var pillCaption = MakeBtn(post.CaptionInside, 23, 224, 300, 44, 18, Color.FromArgb(32, 38, 35), Color.White, Color.FromArgb(180, 210, 195), 1, 8.2F);
+            if (isMyTopCard) pillCaption.Click += (s, e) => OpenMyGalleryScreen();
+
             if (post.CustomImage != null)
             {
                 PictureBox pic = new PictureBox { Dock = DockStyle.Fill, Image = post.CustomImage, SizeMode = PictureBoxSizeMode.StretchImage };
                 if (isMyTopCard) pic.Click += (s, e) => OpenMyGalleryScreen();
+                pic.Controls.Add(pillCaption);
                 photoFrame.Controls.Add(pic);
             }
             else
@@ -1043,12 +1212,9 @@ namespace PocketLog.Client
                 };
                 if (isMyTopCard) art.Click += (s, e) => OpenMyGalleryScreen();
                 photoFrame.Controls.Add(art);
+                photoFrame.Controls.Add(pillCaption);
+                pillCaption.BringToFront();
             }
-
-            var pillCaption = MakeBtn(post.CaptionInside, 23, 224, 300, 44, 18, Color.FromArgb(32, 38, 35), Color.White, Color.FromArgb(180, 210, 195), 1, 8.4F);
-            if (isMyTopCard) pillCaption.Click += (s, e) => OpenMyGalleryScreen();
-            photoFrame.Controls.Add(pillCaption);
-            pillCaption.BringToFront();
 
             if (isMyTopCard)
             {
@@ -1063,7 +1229,7 @@ namespace PocketLog.Client
         private void OpenMyGalleryScreen()
         {
             Panel galleryRoot = new Panel { BackColor = clrAppBg, AutoScroll = true };
-            var btnBack = MakeBtn("‹ Quay lại Bảng tin", 20, 14, 150, 36, 12, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
+            var btnBack = MakeBtn("‹ Quay lại Bảng tin", 20, 14, 150, 36, 12, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.5F);
             btnBack.Click += (s, e) => ActivateMenu(btnTabFeed, BuildFeedScreen());
 
             galleryRoot.Controls.Add(btnBack);
@@ -1103,7 +1269,7 @@ namespace PocketLog.Client
         }
 
         // ====================================================================
-        // MÀN HÌNH 2: CHỤP ẢNH & BẮN GÓI TIN QUA TCP SERVER
+        // MÀN HÌNH 2: CHỤP ẢNH BẰNG WEBCAM LAPTOP/PC (BẤM VÀO KHUNG LÀ CHỤP)
         // ====================================================================
         private Control BuildCameraScreen()
         {
@@ -1114,63 +1280,133 @@ namespace PocketLog.Client
             HashSet<string> taggedFriendNames = new HashSet<string>();
             Image? uploadedPhoto = null;
 
-            var badgeLiveTop = MakeBtn("🍜 Đồ ăn/Thức uống — Bún bò Huế • 45.000đ (🔒 Cá nhân)", 20, 10, 374, 32, 10, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8F);
+            var badgeLiveTop = MakeBtn("🍜 Đồ ăn/Thức uống — Bún bò Huế • 45.000đ (🔒 Cá nhân)", 20, 8, 374, 30, 10, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.8F);
 
+            // Khung ngắm Camera Locket
             Guna2Panel pnlViewfinder = new Guna2Panel
             {
-                Location = new Point(20, 46),
-                Size = new Size(374, 212),
+                Location = new Point(20, 44),
+                Size = new Size(374, 214),
                 BorderRadius = 22,
-                FillColor = Color.FromArgb(46, 62, 56),
+                FillColor = Color.FromArgb(36, 48, 44),
                 BorderColor = clrSoftGreenBorder,
                 BorderThickness = 2,
                 Cursor = Cursors.Hand
             };
 
-            PictureBox picPreview = new PictureBox { Dock = DockStyle.Fill, SizeMode = PictureBoxSizeMode.StretchImage, Visible = false };
-            Label lblPrompt = new Label
+            PictureBox picPreview = new PictureBox
             {
-                Text = "📷\nBấm vào khung để chọn/chụp ảnh",
-                Font = new Font("Segoe UI", 10.5F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(215, 230, 224),
-                Size = new Size(340, 65),
-                Location = new Point(17, 46),
-                TextAlign = ContentAlignment.MiddleCenter,
-                BackColor = Color.Transparent
+                Dock = DockStyle.Fill,
+                SizeMode = PictureBoxSizeMode.StretchImage,
+                BackColor = Color.Transparent,
+                Visible = false,
+                Cursor = Cursors.Hand
             };
 
-            var pillLiveCaption = MakeBtn("Bữa trưa ngon bổ rẻ cùng đồng đội ✨", 32, 158, 310, 40, 18, Color.FromArgb(28, 34, 31), Color.White, Color.FromArgb(180, 210, 195), 1, 8.4F);
+            Label lblPrompt = new Label
+            {
+                Text = "📷 Đang khởi động Camera Laptop...",
+                Font = new Font("Segoe UI", 9.8F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(215, 230, 224),
+                Size = new Size(340, 65),
+                Location = new Point(17, 62),
+                TextAlign = ContentAlignment.MiddleCenter,
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Hand
+            };
 
-            pnlViewfinder.Controls.AddRange(new Control[] { lblPrompt, picPreview, pillLiveCaption });
+            // Nhãn hướng dẫn trạng thái Camera góc trên bên trái khung ngắm
+            var badgeCamState = MakeBtn("🟢 LIVE CAMERA • Bấm vào khung để chụp", 14, 10, 260, 26, 12,
+                Color.FromArgb(24, 92, 68), Color.White, clrSoftGreenBorder, 1, 7.6F);
+
+            var pillLiveCaption = MakeBtn("Bữa trưa ngon bổ rẻ cùng đồng đội ✨", 32, 160, 310, 40, 18,
+                Color.FromArgb(28, 34, 31), Color.White, Color.FromArgb(180, 210, 195), 1, 8.2F);
+
+            pnlViewfinder.Controls.AddRange(new Control[] { lblPrompt, picPreview, badgeCamState, pillLiveCaption });
+            badgeCamState.BringToFront();
             pillLiveCaption.BringToFront();
 
-            EventHandler pickImg = (s, e) =>
+            // Bật Webcam tự động ngay khi mở màn hình Chụp ảnh
+            bool started = StartWebcam(picPreview, lblPrompt, pillLiveCaption);
+            if (started)
+            {
+                picPreview.Controls.Add(badgeCamState);
+                picPreview.Controls.Add(pillLiveCaption);
+            }
+            else
+            {
+                badgeCamState.Text = "⚠ Không có Webcam • Bấm để thử lại";
+                badgeCamState.FillColor = clrRedDanger;
+            }
+
+            // SỰ KIỆN CHÍNH: Bấm vào khung ảnh -> Nếu đang Live thì CHỤP ẢNH; Nếu đã chụp thì MỞ LẠI CAMERA để chụp lại
+            EventHandler clickViewfinderToSnap = (s, e) =>
+            {
+                if (isWebcamStreaming)
+                {
+                    Bitmap? snap = CaptureSnapshotFromWebcam();
+                    if (snap != null)
+                    {
+                        uploadedPhoto?.Dispose();
+                        uploadedPhoto = snap;
+                        picPreview.Image = (Bitmap)snap.Clone();
+                        picPreview.Visible = true;
+                        lblPrompt.Visible = false;
+
+                        badgeCamState.Text = "📸 ĐÃ CHỤP ẢNH! (Bấm vào khung để chụp lại)";
+                        badgeCamState.FillColor = clrIndigo;
+                    }
+                }
+                else
+                {
+                    // Mở lại Webcam để chụp tấm mới
+                    uploadedPhoto = null;
+                    if (StartWebcam(picPreview, lblPrompt, pillLiveCaption))
+                    {
+                        picPreview.Controls.Add(badgeCamState);
+                        picPreview.Controls.Add(pillLiveCaption);
+                        badgeCamState.Text = "🟢 LIVE CAMERA • Bấm vào khung để chụp";
+                        badgeCamState.FillColor = Color.FromArgb(24, 92, 68);
+                    }
+                }
+            };
+
+            pnlViewfinder.Click += clickViewfinderToSnap;
+            picPreview.Click += clickViewfinderToSnap;
+            lblPrompt.Click += clickViewfinderToSnap;
+            badgeCamState.Click += clickViewfinderToSnap;
+
+            // SỰ KIỆN NÚT CŨ BÊN DƯỚI: Chọn file ảnh có sẵn từ máy tính
+            EventHandler pickImgFromFile = (s, e) =>
             {
                 using (OpenFileDialog ofd = new OpenFileDialog { Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp" })
                 {
                     if (ofd.ShowDialog() == DialogResult.OK)
                     {
+                        StopWebcam();
+                        uploadedPhoto?.Dispose();
                         uploadedPhoto = Image.FromFile(ofd.FileName);
-                        picPreview.Image = uploadedPhoto;
+                        picPreview.Image = (Image)uploadedPhoto.Clone();
                         picPreview.Visible = true;
                         lblPrompt.Visible = false;
-                        pillLiveCaption.BringToFront();
+
+                        picPreview.Controls.Add(badgeCamState);
+                        picPreview.Controls.Add(pillLiveCaption);
+                        badgeCamState.Text = "🖼️ Ảnh từ máy (Bấm vào khung để bật lại Camera)";
+                        badgeCamState.FillColor = clrPrimaryGreen;
                     }
                 }
             };
-            pnlViewfinder.Click += pickImg;
-            lblPrompt.Click += pickImg;
-            picPreview.Click += pickImg;
 
-            root.Controls.Add(MakeLabel("Mục chi tiêu (Bấm lại để bỏ tag):", 20, 266, 8.8F, FontStyle.Bold, clrTextMain));
-            var btnNoTag = MakeBtn("🚫 Không gắn tag", 278, 262, 116, 26, 8, clrCardBg, clrRedDanger, clrRedDanger, 1, 7.8F);
+            root.Controls.Add(MakeLabel("Mục chi tiêu (Bấm lại để bỏ tag):", 20, 266, 8.5F, FontStyle.Bold, clrTextMain));
+            var btnNoTag = MakeBtn("🚫 Bỏ gắn tag", 272, 262, 122, 26, 8, clrCardBg, clrRedDanger, clrRedDanger, 1, 7.6F);
 
             List<Guna2Button> catButtons = new List<Guna2Button>();
 
             Guna2Panel pnlNoteCard = new Guna2Panel
             {
-                Location = new Point(20, 370),
-                Size = new Size(374, 224),
+                Location = new Point(20, 368),
+                Size = new Size(374, 226),
                 BorderRadius = 16,
                 FillColor = clrCardBg,
                 BorderColor = clrBorderLight,
@@ -1200,14 +1436,15 @@ namespace PocketLog.Client
                 Font = new Font("Segoe UI", 9.2F, FontStyle.Bold)
             };
 
-            Label lblTagFriends = MakeLabel("👥 Tag bạn bè chia tiền cùng (Không chọn = Cá nhân):", 12, 50, 8.2F, FontStyle.Bold, clrIndigo);
+            Label lblTagFriends = MakeLabel("👥 Tag bạn bè chia tiền cùng (Không chọn = Cá nhân):", 12, 48, 8F, FontStyle.Bold, clrIndigo);
 
+            // Sửa FlowLayoutPanel cho phép tự động co giãn độ rộng nút tên bạn bè không bị khuất chữ
             FlowLayoutPanel flowFriends = new FlowLayoutPanel
             {
-                Location = new Point(10, 70),
-                Size = new Size(354, 46),
+                Location = new Point(10, 68),
+                Size = new Size(354, 52),
                 AutoScroll = true,
-                WrapContents = false,
+                WrapContents = true,
                 BackColor = Color.Transparent
             };
 
@@ -1215,17 +1452,17 @@ namespace PocketLog.Client
             {
                 Text = "Bữa trưa ngon bổ rẻ cùng đồng đội ✨",
                 PlaceholderText = "Caption lọt trong ảnh (giữa phía dưới)...",
-                Location = new Point(12, 124),
+                Location = new Point(12, 126),
                 Size = new Size(350, 36),
                 BorderRadius = 10,
                 BorderColor = clrBorderLight,
                 Font = new Font("Segoe UI", 8.8F)
             };
 
-            var btnChooseFile = MakeBtn("🖼️ Chọn ảnh từ máy tính", 12, 168, 220, 36, 10, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.2F);
-            btnChooseFile.Click += pickImg;
+            var btnChooseFile = MakeBtn("🖼️ Chọn ảnh từ máy tính", 12, 170, 220, 36, 10, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8F);
+            btnChooseFile.Click += pickImgFromFile;
 
-            var btnAddMoreFriend = MakeBtn("+ Thêm bạn", 240, 168, 122, 36, 10, clrSoftIndigo, clrIndigo, clrIndigo, 1, 8.2F);
+            var btnAddMoreFriend = MakeBtn("+ Thêm bạn", 240, 170, 122, 36, 10, clrSoftIndigo, clrIndigo, clrIndigo, 1, 8F);
             btnAddMoreFriend.Click += (s, e) => OpenFriendsDrawer();
 
             Action updatePreview = () =>
@@ -1256,44 +1493,55 @@ namespace PocketLog.Client
                 }
             };
 
-            foreach (var f in myFriends)
+            if (myFriends.Count == 0)
             {
-                var fBtn = MakeBtn($"+ {f.Name}", 0, 0, 102, 32, 14, clrCardBg, clrTextMain, clrBorderLight, 1, 8F);
-                fBtn.Margin = new Padding(2, 2, 6, 2);
-                fBtn.Click += (s, e) =>
+                var btnHintAddFriend = MakeBtn("👥 Chưa có bạn bè -> Bấm vào đây để kết bạn & tag", 0, 0, 336, 30, 12, clrSoftIndigo, clrIndigo, clrIndigo, 1, 7.8F);
+                btnHintAddFriend.Click += (s, e) => OpenFriendsDrawer();
+                flowFriends.Controls.Add(btnHintAddFriend);
+            }
+            else
+            {
+                foreach (var f in myFriends)
                 {
-                    if (taggedFriendNames.Contains(f.Name))
+                    int dynamicWidth = Math.Max(105, f.Name.Length * 9 + 34);
+                    var fBtn = MakeBtn($"+ {f.Name}", 0, 0, dynamicWidth, 28, 14, clrCardBg, clrTextMain, clrBorderLight, 1, 7.8F);
+                    fBtn.Margin = new Padding(2, 2, 6, 4);
+                    fBtn.Click += (s, e) =>
                     {
-                        taggedFriendNames.Remove(f.Name);
-                        fBtn.Text = $"+ {f.Name}";
-                        fBtn.FillColor = clrCardBg;
-                        fBtn.ForeColor = clrTextMain;
-                        fBtn.BorderColor = clrBorderLight;
-                        fBtn.BorderThickness = 1;
-                    }
-                    else
-                    {
-                        taggedFriendNames.Add(f.Name);
-                        fBtn.Text = $"✓ {f.Name}";
-                        fBtn.FillColor = clrSoftIndigo;
-                        fBtn.ForeColor = clrIndigo;
-                        fBtn.BorderColor = clrIndigo;
-                        fBtn.BorderThickness = 2;
-                    }
-                    updatePreview();
-                };
-                flowFriends.Controls.Add(fBtn);
+                        if (taggedFriendNames.Contains(f.Name))
+                        {
+                            taggedFriendNames.Remove(f.Name);
+                            fBtn.Text = $"+ {f.Name}";
+                            fBtn.FillColor = clrCardBg;
+                            fBtn.ForeColor = clrTextMain;
+                            fBtn.BorderColor = clrBorderLight;
+                            fBtn.BorderThickness = 1;
+                        }
+                        else
+                        {
+                            taggedFriendNames.Add(f.Name);
+                            fBtn.Text = $"✓ {f.Name}";
+                            fBtn.FillColor = clrSoftIndigo;
+                            fBtn.ForeColor = clrIndigo;
+                            fBtn.BorderColor = clrIndigo;
+                            fBtn.BorderThickness = 2;
+                        }
+                        updatePreview();
+                    };
+                    flowFriends.Controls.Add(fBtn);
+                }
             }
 
+            // Hiển thị nhãn ngắn gọn trên 6 nút danh mục (🍜 Ăn uống, 📚 Học tập...) để không bị mất chữ
             for (int i = 0; i < standardCategories.Length; i++)
             {
                 var cat = standardCategories[i];
-                var btnCat = MakeBtn(cat.Name, 20 + (i % 3) * 127, 292 + (i / 3) * 36, 120, 32, 10,
-                    i == 0 ? clrSoftIndigo : clrCardBg, i == 0 ? clrIndigo : clrTextMain, i == 0 ? clrIndigo : clrBorderLight, i == 0 ? 2 : 1, 7.8F);
+                var btnCat = MakeBtn(cat.ShortLabel, 20 + (i % 3) * 127, 292 + (i / 3) * 36, 120, 32, 10,
+                    i == 0 ? clrSoftIndigo : clrCardBg, i == 0 ? clrIndigo : clrTextMain, i == 0 ? clrIndigo : clrBorderLight, i == 0 ? 2 : 1, 8F);
 
                 btnCat.Click += (s, e) =>
                 {
-                    if (selectedCategory == cat.Name)
+                    if (selectedCategory == cat.Key)
                     {
                         selectedCategory = null;
                         btnCat.FillColor = clrCardBg;
@@ -1314,7 +1562,7 @@ namespace PocketLog.Client
                         btnCat.ForeColor = clrIndigo;
                         btnCat.BorderColor = clrIndigo;
                         btnCat.BorderThickness = 2;
-                        selectedCategory = cat.Name;
+                        selectedCategory = cat.Key;
                     }
                     updatePreview();
                 };
@@ -1341,9 +1589,19 @@ namespace PocketLog.Client
 
             pnlNoteCard.Controls.AddRange(new Control[] { txtNoteTop, txtAmountNum, lblTagFriends, flowFriends, txtCaption, btnChooseFile, btnAddMoreFriend });
 
-            var btnPostPhoto = MakeBtn("Đăng ảnh", 20, 602, 374, 48, 16, clrPrimaryGreen, Color.White, clrSoftGreenBorder, 2, 11F);
+            var btnPostPhoto = MakeBtn("Đăng ảnh", 20, 602, 374, 48, 16, clrPrimaryGreen, Color.White, clrSoftGreenBorder, 2, 10.5F);
             btnPostPhoto.Click += async (s, e) =>
             {
+                // Nếu người dùng bấm "Đăng ảnh" ngay khi Camera vẫn đang Live thì tự động chụp luôn khung hình hiện tại
+                if (isWebcamStreaming && uploadedPhoto == null)
+                {
+                    uploadedPhoto = CaptureSnapshotFromWebcam();
+                }
+                else
+                {
+                    StopWebcam();
+                }
+
                 btnPostPhoto.Enabled = false;
                 btnPostPhoto.Text = "⏳ Đang gửi lên Server...";
 
@@ -1382,7 +1640,7 @@ namespace PocketLog.Client
         }
 
         // ====================================================================
-        // MÀN HÌNH 3: QUẢN LÝ CHI TIÊU (GỬI ẢNH CK & XÁC NHẬN QUA TCP)
+        // MÀN HÌNH 3: QUẢN LÝ CHI TIÊU
         // ====================================================================
         private Control BuildExpenseScreen()
         {
@@ -1404,7 +1662,7 @@ namespace PocketLog.Client
                 BorderRadius = 12,
                 FillColor = Color.FromArgb(31, 41, 79)
             };
-            pnlBanner.Controls.Add(MakeLabel($"Chia tiền bạn bè • Chưa tất toán: {totalUnpaidShare:N0}đ", 14, 13, 9.8F, FontStyle.Bold, Color.White));
+            pnlBanner.Controls.Add(MakeLabel($"Chia tiền bạn bè • Chưa tất toán: {totalUnpaidShare:N0}đ", 14, 13, 9.5F, FontStyle.Bold, Color.White));
             root.Controls.Add(pnlBanner);
             y += 54;
 
@@ -1420,18 +1678,18 @@ namespace PocketLog.Client
 
             if (currentDebt != null)
             {
-                cardActiveDebt.Controls.Add(MakeLabel($"Khoản chia: {currentDebt.Title}", 14, 10, 9.5F, FontStyle.Bold, clrTextMain));
-                cardActiveDebt.Controls.Add(MakeLabel($"{currentDebt.SplitDetail} • Phần chia: {currentDebt.MyShare:N0}đ", 14, 30, 8.2F, FontStyle.Bold, clrPrimaryGreen));
+                cardActiveDebt.Controls.Add(MakeLabel($"Khoản chia: {currentDebt.Title}", 14, 10, 9.2F, FontStyle.Bold, clrTextMain));
+                cardActiveDebt.Controls.Add(MakeLabel($"{currentDebt.SplitDetail} • Phần chia: {currentDebt.MyShare:N0}đ", 14, 30, 8F, FontStyle.Bold, clrPrimaryGreen));
 
                 var badgeState = MakeBtn(
                     currentDebt.IsConfirmedPaid ? "✓ Đã hoàn thành" : (currentDebt.IsSentProof ? "⏳ Chờ xác nhận" : "Chưa thanh toán"),
                     14, 52, 136, 24, 8,
                     currentDebt.IsConfirmedPaid ? clrSoftGreenBg : clrBadgeOrangeBg,
                     currentDebt.IsConfirmedPaid ? clrPrimaryGreen : clrBadgeOrangeTxt,
-                    Color.Transparent, 0, 7.8F);
+                    Color.Transparent, 0, 7.6F);
                 cardActiveDebt.Controls.Add(badgeState);
 
-                Label lblNote = MakeLabel(currentDebt.StatusNote, 156, 56, 7.8F, FontStyle.Italic, clrTextMuted);
+                Label lblNote = MakeLabel(currentDebt.StatusNote, 156, 56, 7.6F, FontStyle.Italic, clrTextMuted);
                 cardActiveDebt.Controls.Add(lblNote);
 
                 Guna2Panel pnlBillImg = new Guna2Panel
@@ -1454,7 +1712,7 @@ namespace PocketLog.Client
                 Label lblNoImg = new Label
                 {
                     Text = "🧾\nẢnh bill CK\nđính kèm",
-                    Font = new Font("Segoe UI", 8.2F, FontStyle.Bold),
+                    Font = new Font("Segoe UI", 8F, FontStyle.Bold),
                     ForeColor = clrTextMuted,
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleCenter,
@@ -1464,8 +1722,8 @@ namespace PocketLog.Client
                 pnlBillImg.Controls.Add(picProof);
                 cardActiveDebt.Controls.Add(pnlBillImg);
 
-                var btnUploadProof = MakeBtn("📤 Gửi ảnh CK của bản thân", 162, 86, 198, 50, 12, clrSoftIndigo, clrIndigo, clrIndigo, 2, 8.5F);
-                var btnFriendVerify = MakeBtn($"✓ Xác nhận hoàn thành", 162, 146, 198, 54, 12, clrPrimaryGreen, Color.White, clrSoftGreenBorder, 1, 8.5F);
+                var btnUploadProof = MakeBtn("📤 Gửi ảnh CK của bản thân", 162, 86, 198, 50, 12, clrSoftIndigo, clrIndigo, clrIndigo, 2, 8.2F);
+                var btnFriendVerify = MakeBtn("✓ Xác nhận hoàn thành", 162, 146, 198, 54, 12, clrPrimaryGreen, Color.White, clrSoftGreenBorder, 1, 8.2F);
 
                 btnUploadProof.Click += async (s, e) =>
                 {
@@ -1505,16 +1763,15 @@ namespace PocketLog.Client
             }
             else
             {
-                cardActiveDebt.Controls.Add(MakeLabel("Chưa có khoản chia tiền nào được gắn tag.", 42, 92, 9.5F, FontStyle.Bold, clrTextMuted));
+                cardActiveDebt.Controls.Add(MakeLabel("Chưa có khoản chia tiền nào được gắn tag.", 42, 92, 9.2F, FontStyle.Bold, clrTextMuted));
             }
             root.Controls.Add(cardActiveDebt);
             y += 226;
 
-            // Nút thả xuống các khoản chi được gắn tag chưa thanh toán
             string arrow = isUnpaidDropdownOpen ? "▲" : "▼";
             var btnToggleUnpaid = MakeBtn(
                 $"{arrow} Các khoản chi gắn tag với bạn bè chưa thanh toán ({unpaidList.Count})",
-                20, y, 374, 40, 12, clrSoftIndigo, clrIndigo, clrIndigo, 1, 8.4F);
+                20, y, 374, 40, 12, clrSoftIndigo, clrIndigo, clrIndigo, 1, 8.2F);
 
             btnToggleUnpaid.Click += (s, e) =>
             {
@@ -1539,16 +1796,16 @@ namespace PocketLog.Client
                         BorderThickness = isSelected ? 2 : 1
                     };
 
-                    itemRow.Controls.Add(MakeLabel($"{debt.Category} • {debt.Title}", 12, 8, 8.8F, FontStyle.Bold, clrTextMain));
-                    itemRow.Controls.Add(MakeLabel($"{debt.SplitDetail} • Phần chia: {debt.MyShare:N0}đ", 12, 28, 8F, FontStyle.Bold, clrPrimaryGreen));
-                    itemRow.Controls.Add(MakeLabel($"{debt.Time} • {(debt.IsSentProof ? "Đã đính kèm bill" : "Chưa gửi bill")}", 12, 46, 7.6F, FontStyle.Regular, clrTextMuted));
+                    itemRow.Controls.Add(MakeLabel($"{debt.Category} • {debt.Title}", 12, 8, 8.5F, FontStyle.Bold, clrTextMain));
+                    itemRow.Controls.Add(MakeLabel($"{debt.SplitDetail} • Phần chia: {debt.MyShare:N0}đ", 12, 28, 7.8F, FontStyle.Bold, clrPrimaryGreen));
+                    itemRow.Controls.Add(MakeLabel($"{debt.Time} • {(debt.IsSentProof ? "Đã đính kèm bill" : "Chưa gửi bill")}", 12, 46, 7.5F, FontStyle.Regular, clrTextMuted));
 
                     var btnSelectDebt = MakeBtn(
                         isSelected ? "Đang chọn" : "Chọn trả ›",
                         272, 16, 90, 34, 10,
                         isSelected ? clrPrimaryGreen : clrSoftIndigo,
                         isSelected ? Color.White : clrIndigo,
-                        isSelected ? clrPrimaryGreen : clrIndigo, 1, 8F);
+                        isSelected ? clrPrimaryGreen : clrIndigo, 1, 7.8F);
 
                     btnSelectDebt.Click += (s, e) =>
                     {
@@ -1563,13 +1820,13 @@ namespace PocketLog.Client
             }
 
             y += 6;
-            root.Controls.Add(MakeLabel("Chi tiêu theo danh mục Tag (Tự đặt hạn mức):", 20, y, 10F, FontStyle.Bold, clrTextMain));
+            root.Controls.Add(MakeLabel("Chi tiêu của bạn theo danh mục Tag:", 20, y, 9.8F, FontStyle.Bold, clrTextMain));
             y += 26;
 
             foreach (var cat in standardCategories)
             {
-                string catName = cat.Name;
-                int spent = posts.Where(p => p.HasTag && p.Category == catName).Sum(p => p.Amount);
+                string catName = cat.Key;
+                int spent = posts.Where(p => p.IsMine && p.HasTag && p.Category == catName).Sum(p => p.Amount);
                 int limit = categoryBudgets.ContainsKey(catName) ? categoryBudgets[catName] : 500000;
 
                 Guna2Panel catCard = new Guna2Panel
@@ -1582,8 +1839,8 @@ namespace PocketLog.Client
                     BorderThickness = 1
                 };
 
-                catCard.Controls.Add(MakeLabel(catName, 12, 10, 9.2F, FontStyle.Bold, clrTextMain));
-                catCard.Controls.Add(MakeLabel($"Đã tiêu: {spent:N0}đ / Mức: {limit:N0}đ", 12, 32, 8F, FontStyle.Bold, spent > limit ? clrRedDanger : clrPrimaryGreen));
+                catCard.Controls.Add(MakeLabel(catName, 12, 10, 9F, FontStyle.Bold, clrTextMain));
+                catCard.Controls.Add(MakeLabel($"Đã tiêu: {spent:N0}đ / Mức: {limit:N0}đ", 12, 32, 7.8F, FontStyle.Bold, spent > limit ? clrRedDanger : clrPrimaryGreen));
 
                 int pct = limit > 0 ? Math.Min(100, (int)((long)spent * 100 / limit)) : 100;
                 Guna2ProgressBar prg = new Guna2ProgressBar
@@ -1607,7 +1864,7 @@ namespace PocketLog.Client
                     Font = new Font("Segoe UI", 8.5F)
                 };
 
-                var btnSetLim = MakeBtn("Set hạn mức", 234, 46, 126, 28, 8, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.8F);
+                var btnSetLim = MakeBtn("Set hạn mức", 234, 46, 126, 28, 8, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.6F);
                 btnSetLim.Click += (s, e) =>
                 {
                     if (int.TryParse(txtLim.Text.Replace(".", "").Replace(",", ""), out int nLim) && nLim > 0)
@@ -1622,7 +1879,7 @@ namespace PocketLog.Client
                 y += 92;
             }
 
-            int grandTotal = posts.Where(p => p.HasTag).Sum(p => p.Amount);
+            int grandTotal = posts.Where(p => p.IsMine && p.HasTag).Sum(p => p.Amount);
 
             Guna2Panel cardTotal = new Guna2Panel
             {
@@ -1634,8 +1891,8 @@ namespace PocketLog.Client
                 BorderThickness = 2
             };
 
-            cardTotal.Controls.Add(MakeLabel("TỔNG CHI TIÊU TẤT CẢ CÁC MỤC", 14, 10, 9.2F, FontStyle.Bold, clrPrimaryGreen));
-            cardTotal.Controls.Add(MakeLabel($"{grandTotal:N0}đ  /  Tổng hạn mức: {totalBudgetLimit:N0}đ", 14, 32, 10.5F, FontStyle.Bold, grandTotal > totalBudgetLimit ? clrRedDanger : clrTextMain));
+            cardTotal.Controls.Add(MakeLabel("TỔNG CHI TIÊU CÁ NHÂN TẤT CẢ CÁC MỤC", 14, 10, 8.8F, FontStyle.Bold, clrPrimaryGreen));
+            cardTotal.Controls.Add(MakeLabel($"{grandTotal:N0}đ  /  Tổng hạn mức: {totalBudgetLimit:N0}đ", 14, 32, 10F, FontStyle.Bold, grandTotal > totalBudgetLimit ? clrRedDanger : clrTextMain));
 
             int totalPct = totalBudgetLimit > 0 ? Math.Min(100, (int)((long)grandTotal * 100 / totalBudgetLimit)) : 100;
             Guna2ProgressBar prgTotal = new Guna2ProgressBar
@@ -1660,7 +1917,7 @@ namespace PocketLog.Client
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold)
             };
 
-            var btnSetTotal = MakeBtn("Set tổng hạn mức", 232, 82, 128, 34, 10, clrPrimaryGreen, Color.White, clrPrimaryGreen, 1, 8.2F);
+            var btnSetTotal = MakeBtn("Set tổng hạn mức", 232, 82, 128, 34, 10, clrPrimaryGreen, Color.White, clrPrimaryGreen, 1, 8F);
             btnSetTotal.Click += async (s, e) =>
             {
                 if (int.TryParse(txtTotalIn.Text.Replace(".", "").Replace(",", ""), out int nTot) && nTot > 0)
@@ -1683,14 +1940,11 @@ namespace PocketLog.Client
             return root;
         }
 
-        // ====================================================================
-        // TIỆN ÍCH CHUYỂN ĐỔI ẢNH <-> BASE64 NHẸ MƯỢT QUA MẠNG TCP
-        // ====================================================================
         private string GetCategoryEmoji(string category)
         {
             foreach (var c in standardCategories)
             {
-                if (c.Name == category) return c.Emoji;
+                if (c.Key == category || c.ShortLabel == category) return c.Emoji;
             }
             return "📷";
         }
