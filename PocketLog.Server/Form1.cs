@@ -23,6 +23,7 @@ namespace PocketLog.Server
         private readonly string storageFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ServerStorage");
 
         private readonly ConcurrentDictionary<TcpClient, int> connectedClients = new ConcurrentDictionary<TcpClient, int>();
+        private readonly ConcurrentDictionary<TcpClient, SemaphoreSlim> clientSendLocks = new ConcurrentDictionary<TcpClient, SemaphoreSlim>();
 
         private Label lblStatus = null!;
         private Label lblIpInfo = null!;
@@ -310,6 +311,7 @@ namespace PocketLog.Server
             finally
             {
                 connectedClients.TryRemove(client, out _);
+                clientSendLocks.TryRemove(client, out _);
                 client.Close();
                 RefreshOnlineListUI();
                 await BroadcastRefreshToAllClientsAsync();
@@ -319,6 +321,29 @@ namespace PocketLog.Server
         // ====================================================================
         // 3. XỬ LÝ GÓI TIN TCP
         // ====================================================================
+        private async Task SendToClientSafeAsync(TcpClient client, TcpPacket packet)
+        {
+            if (client == null || !client.Connected) return;
+
+            var sendLock = clientSendLocks.GetOrAdd(client, _ => new SemaphoreSlim(1, 1));
+            await sendLock.WaitAsync();
+            try
+            {
+                if (client.Connected)
+                {
+                    await TcpPacketHelper.SendPacketAsync(client.GetStream(), packet);
+                }
+            }
+            catch
+            {
+                // Tránh crash nếu Client vừa ngắt kết nối đột ngột
+            }
+            finally
+            {
+                sendLock.Release();
+            }
+        }
+
         private async Task ProcessPacketAsync(TcpClient client, NetworkStream stream, TcpPacket packet)
         {
             switch (packet.Type)
@@ -333,8 +358,7 @@ namespace PocketLog.Server
                             RefreshOnlineListUI();
                             Log($"🔑 [{res.FullName}] (ID={res.UserId}) đã đăng nhập.");
                         }
-                        await TcpPacketHelper.SendPacketAsync(stream, TcpPacket.Create(PacketType.LOGIN_RES, res));
-                        // Báo cho toàn bộ các máy đang mở cập nhật danh sách tài khoản & trạng thái Online
+                        await SendToClientSafeAsync(client, TcpPacket.Create(PacketType.LOGIN_RES, res));
                         await BroadcastRefreshToAllClientsAsync();
                         break;
                     }
@@ -343,7 +367,7 @@ namespace PocketLog.Server
                     {
                         int userId = packet.GetPayload<int>();
                         var syncData = BuildSyncDataForUser(userId);
-                        await TcpPacketHelper.SendPacketAsync(stream, TcpPacket.Create(PacketType.SYNC_RES, syncData));
+                        await SendToClientSafeAsync(client, TcpPacket.Create(PacketType.SYNC_RES, syncData));
                         break;
                     }
 
@@ -398,14 +422,7 @@ namespace PocketLog.Server
             var refreshPacket = TcpPacket.Create(PacketType.REFRESH_BROADCAST, "SYNC");
             foreach (var kv in connectedClients.Keys.ToList())
             {
-                try
-                {
-                    if (kv.Connected)
-                    {
-                        await TcpPacketHelper.SendPacketAsync(kv.GetStream(), refreshPacket);
-                    }
-                }
-                catch { }
+                await SendToClientSafeAsync(kv, refreshPacket);
             }
         }
 
