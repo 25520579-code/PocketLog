@@ -1,6 +1,6 @@
 # NT106.R13 -  Basic Network Programming Project
 
-NT10.R13 - Đồ án môn học Lập trình mạng căn bản
+NT106.R13 - Đồ án môn học Lập trình mạng căn bản
 
 ## PocketLog - Ứng Dụng quản lí chi tiêu cá nhân cho phép chụp ảnh, đăng kèm ghi chú và số tiền đã chi cho từng khoảnh khắc
 
