@@ -6,7 +6,7 @@ NT106 - Đồ án môn học Lập trình mạng căn bản
 
 **Giảng viên:**
 
-* ThS. Đỗ Thị Hương Lan
+ThS. Đỗ Thị Hương Lan
 
 ## 👥 Thành viên nhóm
 
