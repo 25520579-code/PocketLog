@@ -16,10 +16,10 @@ ThS. Đỗ Thị Hương Lan
 | 25520579 | Đỗ Huy Hoàng | Thành viên |
 | 25520655 | Thập Thế Hưng | Thành viên |
 
-## ⚙️ Hướng dẫn sử dụng
+## 📖 Hướng dẫn sử dụng
 
-1. **Tải và giải nén** source code từ GitHub (hoặc clone repository về máy).
-2. **Mở dự án** (`PocketLog.slnx`) trong **Visual Studio 2022** hoặc phiên bản tương đương.
-3. Chạy file script `PocketLogDB_Setup.sql` trong **SQL Server** để khởi tạo cơ sở dữ liệu.
-4. Cần thay đổi **ConnectionString** trong `PocketLog.Server` sao cho phù hợp với máy để kết nối với database.
-5. Thiết lập **Multiple startup projects** cho cả `PocketLog.Server` và `PocketLog.Client`, sau đó nhấn **Start (F5)** để chạy chương trình.
+1. Tải file nén từ GitHub về giải nén hoặc dùng Git clone repo về máy.
+2. Mở file `PocketLog.slnx` bằng **Visual Studio 2022** (hoặc bản tương đương).
+3. Mở file `PocketLogDB_Setup.sql` trong **SQL Server** và chạy script để tạo sẵn database.
+4. Vào `PocketLog.Server` đổi lại **ConnectionString** cho đúng với tên SQL Server trên máy của bạn.
+5. Chỉnh **Multiple startup projects** để chạy cùng lúc cả `PocketLog.Server` và `PocketLog.Client`, sau đó bấm **Start (F5)** là xong.
