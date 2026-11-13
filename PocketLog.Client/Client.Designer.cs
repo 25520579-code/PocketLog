@@ -1,6 +1,6 @@
-﻿namespace PocketLog.Client
+namespace PocketLog.Client
 {
-    partial class Form1
+    partial class Client
     {
         private System.ComponentModel.IContainer components = null;
 

@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "🖥️ Chạy Server (PocketLog.Server)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/PocketLog.Server/bin/Debug/net8.0-windows/PocketLog.Server.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/PocketLog.Server",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        },
+        {
+            "name": "📱 Chạy Client (PocketLog.Client)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-client",
+            "program": "${workspaceFolder}/PocketLog.Client/bin/Debug/net8.0-windows/PocketLog.Client.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}/PocketLog.Client",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ],
+    "compounds": [
+        {
+            "name": "🚀 Chạy CẢ HAI (Server + Client)",
+            "configurations": [
+                "🖥️ Chạy Server (PocketLog.Server)",
+                "📱 Chạy Client (PocketLog.Client)"
+            ]
+        }
+    ]
+}

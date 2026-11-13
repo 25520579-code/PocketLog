@@ -1,6 +1,6 @@
-﻿namespace PocketLog.Server
+namespace PocketLog.Server
 {
-    partial class Form1
+    partial class Server
     {
         /// <summary>
         ///  Required designer variable.
@@ -30,13 +30,13 @@
         {
             SuspendLayout();
             // 
-            // Form1
+            // Server
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 450);
-            Name = "Form1";
-            Text = "Form1";
+            Name = "Server";
+            Text = "Server";
             ResumeLayout(false);
         }
 
