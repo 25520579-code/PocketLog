@@ -20,6 +20,6 @@ ThS. Đỗ Thị Hương Lan
 
 1. Tải file nén từ GitHub về giải nén hoặc dùng Git clone repo về máy.
 2. Mở file `PocketLog.slnx` bằng **Visual Studio 2022** (hoặc bản tương đương).
-3. Mở file `PocketLogDB_Setup.sql` trong **SQL Server** và chạy script để tạo sẵn database.
+3. Mở file `PocketLog_Database.sql` (trong thư mục `PocketLog.Client/PocketLog_Database.sql`) trong **SQL Server** và chạy script để tạo sẵn database.
 4. Vào `PocketLog.Server` đổi lại **ConnectionString** cho đúng với tên SQL Server trên máy của bạn.
 5. Chỉnh **Multiple startup projects** để chạy cùng lúc cả `PocketLog.Server` và `PocketLog.Client`, sau đó bấm **Start (F5)** là xong.
