@@ -166,78 +166,78 @@ namespace PocketLog.Server
                 using (SqlConnection conn = new SqlConnection(dbConnStr))
                 {
                     conn.Open();
+                    // Thay thế đoạn cuối trong chuỗi schemaSql của hàm EnsureDatabaseSetup() (file Server.cs):
                     string schemaSql = @"
-                    IF OBJECT_ID('dbo.Users', 'U') IS NULL
-                    BEGIN
-                        CREATE TABLE Users (
-                            UserID INT IDENTITY(1,1) PRIMARY KEY,
-                            Username NVARCHAR(50) NOT NULL UNIQUE,
-                            PasswordHash NVARCHAR(255) NOT NULL,
-                            FullName NVARCHAR(100) NOT NULL,
-                            MonthlyBudget INT DEFAULT 3500000
-                        );
-                        CREATE TABLE Friendships (
-                            FriendshipID INT IDENTITY(1,1) PRIMARY KEY,
-                            RequesterID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
-                            AddresseeID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
-                            Status NVARCHAR(20) DEFAULT 'Accepted',
-                            CreatedAt DATETIME DEFAULT GETDATE()
-                        );
-                        CREATE TABLE ExpenseGroups (
-                            GroupID INT IDENTITY(1,1) PRIMARY KEY,
-                            CreatedBy INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
-                            GroupName NVARCHAR(100) NOT NULL,
-                            CreatedAt DATETIME DEFAULT GETDATE()
-                        );
-                        CREATE TABLE GroupMembers (
-                            GroupID INT NOT NULL FOREIGN KEY REFERENCES ExpenseGroups(GroupID),
-                            UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
-                            JoinedAt DATETIME DEFAULT GETDATE(),
-                            PRIMARY KEY (GroupID, UserID)
-                        );
-                        CREATE TABLE ExpensePosts (
-                            PostID INT IDENTITY(1,1) PRIMARY KEY,
-                            UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
-                            GroupID INT NULL FOREIGN KEY REFERENCES ExpenseGroups(GroupID),
-                            ImagePath NVARCHAR(255) NOT NULL,
-                            Caption NVARCHAR(255),
-                            IsPublicToFriends BIT DEFAULT 1,
-                            IsExpenseTracked BIT DEFAULT 1,
-                            TotalAmount INT DEFAULT 0,
-                            CreatedAt DATETIME DEFAULT GETDATE()
-                        );
-                        CREATE TABLE ExpenseItems (
-                            ItemID INT IDENTITY(1,1) PRIMARY KEY,
-                            PostID INT NOT NULL FOREIGN KEY REFERENCES ExpensePosts(PostID),
-                            ItemName NVARCHAR(100) NOT NULL,
-                            Amount INT NOT NULL,
-                            Category NVARCHAR(50) NOT NULL,
-                            PosX FLOAT DEFAULT 0.5,
-                            PosY FLOAT DEFAULT 0.5
-                        );
-                        CREATE TABLE SplitBills (
-                            SplitID INT IDENTITY(1,1) PRIMARY KEY,
-                            PostID INT NOT NULL FOREIGN KEY REFERENCES ExpensePosts(PostID),
-                            DebtorID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
-                            AmountOwed INT NOT NULL,
-                            IsPaid BIT DEFAULT 0,
-                            ProofImagePath NVARCHAR(255) NULL,
-                            StatusNote NVARCHAR(255) DEFAULT N'Chưa đính kèm ảnh chuyển khoản',
-                            PaidAt DATETIME NULL,
-                            CreatedAt DATETIME DEFAULT GETDATE()
-                        );
-                    END
+IF OBJECT_ID('dbo.Users', 'U') IS NULL
+BEGIN
+    CREATE TABLE Users (
+        UserID INT IDENTITY(1,1) PRIMARY KEY,
+        Username NVARCHAR(50) NOT NULL UNIQUE,
+        PasswordHash NVARCHAR(255) NOT NULL,
+        FullName NVARCHAR(100) NOT NULL,
+        MonthlyBudget INT DEFAULT 3500000
+    );
+    CREATE TABLE Friendships (
+        FriendshipID INT IDENTITY(1,1) PRIMARY KEY,
+        RequesterID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        AddresseeID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        Status NVARCHAR(20) DEFAULT 'Accepted',
+        CreatedAt DATETIME DEFAULT GETDATE()
+    );
+    CREATE TABLE ExpenseGroups (
+        GroupID INT IDENTITY(1,1) PRIMARY KEY,
+        CreatedBy INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        GroupName NVARCHAR(100) NOT NULL,
+        CreatedAt DATETIME DEFAULT GETDATE()
+    );
+    CREATE TABLE GroupMembers (
+        GroupID INT NOT NULL FOREIGN KEY REFERENCES ExpenseGroups(GroupID),
+        UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        JoinedAt DATETIME DEFAULT GETDATE(),
+        PRIMARY KEY (GroupID, UserID)
+    );
+    CREATE TABLE ExpensePosts (
+        PostID INT IDENTITY(1,1) PRIMARY KEY,
+        UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        GroupID INT NULL FOREIGN KEY REFERENCES ExpenseGroups(GroupID),
+        ImagePath NVARCHAR(255) NOT NULL,
+        Caption NVARCHAR(255),
+        IsPublicToFriends BIT DEFAULT 1,
+        IsExpenseTracked BIT DEFAULT 1,
+        TotalAmount INT DEFAULT 0,
+        CreatedAt DATETIME DEFAULT GETDATE()
+    );
+    CREATE TABLE ExpenseItems (
+        ItemID INT IDENTITY(1,1) PRIMARY KEY,
+        PostID INT NOT NULL FOREIGN KEY REFERENCES ExpensePosts(PostID),
+        ItemName NVARCHAR(100) NOT NULL,
+        Amount INT NOT NULL,
+        Category NVARCHAR(50) NOT NULL,
+        PosX FLOAT DEFAULT 0.5,
+        PosY FLOAT DEFAULT 0.5
+    );
+    CREATE TABLE SplitBills (
+        SplitID INT IDENTITY(1,1) PRIMARY KEY,
+        PostID INT NOT NULL FOREIGN KEY REFERENCES ExpensePosts(PostID),
+        DebtorID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        AmountOwed INT NOT NULL,
+        IsPaid BIT DEFAULT 0,
+        ProofImagePath NVARCHAR(255) NULL,
+        StatusNote NVARCHAR(255) DEFAULT N'Chưa đính kèm ảnh chuyển khoản',
+        PaidAt DATETIME NULL,
+        CreatedAt DATETIME DEFAULT GETDATE()
+    );
+END
 
-                    -- Đảm bảo các tài khoản mẫu luôn tồn tại trong bảng Users dù bảng đã được tạo từ trước
-                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'huyhoang')
-                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('huyhoang', '123', N'Huy Hoàng', 3500000);
-                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'giahuy')
-                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('giahuy', '123', N'Gia Huy', 2500000);
-                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'thehung')
-                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('thehung', '123', N'Thế Hưng', 2000000);
-                    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = 'thanhthao')
-                        INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget) VALUES ('thanhthao', '123', N'Thanh Thảo', 3000000);
-                    ";
+-- Xóa các tài khoản mẫu mặc định trước đây khỏi Database (nếu có)
+DELETE FROM SplitBills WHERE DebtorID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'))
+                          OR PostID IN (SELECT PostID FROM ExpensePosts WHERE UserID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao')));
+DELETE FROM ExpenseItems WHERE PostID IN (SELECT PostID FROM ExpensePosts WHERE UserID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao')));
+DELETE FROM ExpensePosts WHERE UserID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'));
+DELETE FROM Friendships WHERE RequesterID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'))
+                           OR AddresseeID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'));
+DELETE FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao');
+";
 
                     using (SqlCommand cmd = new SqlCommand(schemaSql, conn))
                     {

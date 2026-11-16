@@ -1,12 +1,12 @@
+using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
 using Guna.UI2.WinForms;
 
 namespace PocketLog.Client
 {
     public partial class Client
     {
-        // ====================================================================
-        // MÀN HÌNH BẢNG TIN (NEWFEED)
-        // ====================================================================
         private Control BuildNewFeedScreen() => BuildFeedScreen();
 
         private Control BuildFeedScreen()
@@ -15,19 +15,19 @@ namespace PocketLog.Client
             root.MouseEnter += (s, e) => root.Focus();
             int y = 12;
 
-            root.Controls.Add(MakeLabel("Ảnh mới nhất", 20, y + 4, 10.5F, FontStyle.Bold, clrTextMain));
+            root.Controls.Add(MakeLabel("Bảng tin Locket", 20, y + 4, 10.5F, FontStyle.Bold, clrTextMain));
 
-            var btnGallery = MakeBtn("Kho ảnh ›", 150, y, 90, 28, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.8F);
+            var btnGallery = MakeBtn("Kho ảnh ›", 158, y, 88, 30, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8F);
             btnGallery.Click += (s, e) => OpenMyGalleryScreen();
 
-            var btnFriendsTop = MakeBtn($"👥 Bạn bè ({myFriends.Count}) ›", 246, y, 148, 28, 14, clrSoftIndigo, clrIndigo, clrIndigo, 1, 7.8F);
+            var btnFriendsTop = MakeBtn($"👥 Bạn bè ({myFriends.Count}) ›", 252, y, 148, 30, 14, clrSoftIndigo, clrIndigo, clrBorderLight, 1, 8F);
             btnFriendsTop.Click += (s, e) => OpenFriendsDrawer();
 
             root.Controls.Add(btnGallery);
             root.Controls.Add(btnFriendsTop);
-            y += 36;
+            y += 40;
 
-            LocketPost? latestMine = posts.FirstOrDefault(p => p.IsMine);
+            LocketPost latestMine = posts.FirstOrDefault(p => p.IsMine);
             if (latestMine != null)
             {
                 var hero = CreateLocketPostCard(latestMine, true);
@@ -40,15 +40,16 @@ namespace PocketLog.Client
                 Guna2Panel emptyMine = new Guna2Panel
                 {
                     Location = new Point(20, y),
-                    Size = new Size(374, 96),
-                    BorderRadius = 16,
+                    Size = new Size(380, 96),
+                    BorderRadius = 18,
                     FillColor = clrCardBg,
                     BorderColor = clrSoftGreenBorder,
                     BorderThickness = 1,
+                    UseTransparentBackground = true,
                     Cursor = Cursors.Hand
                 };
                 emptyMine.Controls.Add(MakeLabel("📷 Bạn chưa đăng tấm ảnh nào", 82, 24, 9.5F, FontStyle.Bold, clrPrimaryGreen));
-                emptyMine.Controls.Add(MakeLabel("Bấm sang tab 'Chụp ảnh' để chụp bằng Camera!", 52, 50, 8.2F, FontStyle.Regular, clrTextMuted));
+                emptyMine.Controls.Add(MakeLabel("Bấm sang tab 'Chụp ảnh' để chia sẻ khoảnh khắc!", 48, 50, 8.2F, FontStyle.Regular, clrTextMuted));
                 emptyMine.Click += (s, e) => { activeTabName = "CAMERA"; ActivateMenu(btnTabCamera, BuildCameraScreen()); };
                 root.Controls.Add(emptyMine);
                 y += 110;
@@ -57,23 +58,24 @@ namespace PocketLog.Client
             Guna2Panel divider = new Guna2Panel
             {
                 Location = new Point(20, y),
-                Size = new Size(374, 34),
-                BorderRadius = 10,
+                Size = new Size(380, 34),
+                BorderRadius = 12,
                 FillColor = clrSoftIndigo,
-                BorderColor = Color.FromArgb(180, 188, 240),
-                BorderThickness = 1
+                BorderColor = clrBorderLight,
+                BorderThickness = 1,
+                UseTransparentBackground = true
             };
             divider.Controls.Add(new Label
             {
-                Text = "⬇ Lướt xuống • Bảng tin của bạn bè",
-                Font = new Font("Segoe UI", 8.8F, FontStyle.Bold),
+                Text = "⬇ Lịch sử khoảnh khắc của bạn bè",
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
                 ForeColor = clrIndigo,
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent
             });
             root.Controls.Add(divider);
-            y += 44;
+            y += 46;
 
             var friendPosts = posts.Where(p => !p.IsMine).ToList();
             if (friendPosts.Count == 0)
@@ -81,15 +83,16 @@ namespace PocketLog.Client
                 Guna2Panel noFriendPostBox = new Guna2Panel
                 {
                     Location = new Point(20, y),
-                    Size = new Size(374, 92),
-                    BorderRadius = 16,
+                    Size = new Size(380, 92),
+                    BorderRadius = 18,
                     FillColor = clrCardBg,
                     BorderColor = clrBorderLight,
                     BorderThickness = 1,
+                    UseTransparentBackground = true,
                     Cursor = Cursors.Hand
                 };
-                noFriendPostBox.Controls.Add(MakeLabel("🔒 Chưa có bài đăng nào từ bạn bè", 74, 20, 9.5F, FontStyle.Bold, clrIndigo));
-                noFriendPostBox.Controls.Add(MakeLabel("Bấm vào '👥 Bạn bè' ở góc trên để kết bạn mới thấy bài nhau!", 26, 48, 8F, FontStyle.Regular, clrTextMuted));
+                noFriendPostBox.Controls.Add(MakeLabel("🔒 Chưa có bài đăng nào từ bạn bè", 74, 22, 9.2F, FontStyle.Bold, clrIndigo));
+                noFriendPostBox.Controls.Add(MakeLabel("Bấm vào '👥 Bạn bè' ở góc trên để thêm bạn mới!", 44, 48, 8F, FontStyle.Regular, clrTextMuted));
                 noFriendPostBox.Click += (s, e) => OpenFriendsDrawer();
                 root.Controls.Add(noFriendPostBox);
                 y += 108;
@@ -113,63 +116,77 @@ namespace PocketLog.Client
         {
             Guna2Panel card = new Guna2Panel
             {
-                Size = new Size(374, 356),
-                BorderRadius = 22,
+                Size = new Size(380, 360),
+                BorderRadius = 24,
                 FillColor = clrCardBg,
                 BorderColor = isMyTopCard ? clrSoftGreenBorder : clrBorderLight,
                 BorderThickness = isMyTopCard ? 2 : 1,
+                UseTransparentBackground = true,
                 Cursor = isMyTopCard ? Cursors.Hand : Cursors.Default
             };
 
             Guna2CircleButton avatar = new Guna2CircleButton
             {
                 Text = string.IsNullOrEmpty(post.Author) ? "U" : post.Author.Substring(0, 1).ToUpper(),
-                Size = new Size(34, 34),
+                Size = new Size(36, 36),
                 Location = new Point(14, 12),
                 FillColor = isMyTopCard ? clrPrimaryGreen : clrIndigo,
                 ForeColor = Color.White,
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                UseTransparentBackground = true,
+                BackColor = Color.Transparent
             };
 
             string tagFriendsStr = (post.TaggedFriends != null && post.TaggedFriends.Count > 0)
-                ? $"👥 Tag: {string.Join(", ", post.TaggedFriends)}"
-                : "🔒 Cá nhân";
+                ? $"Tag: {string.Join(", ", post.TaggedFriends)}"
+                : "Cá nhân";
 
             string topText = post.HasTag
-                ? $"{post.Category} — {post.NoteTop} ({tagFriendsStr})"
-                : "📷 Ảnh khoảnh khắc (Không gắn tag)";
+                ? $"{post.Category} • {post.NoteTop} ({tagFriendsStr})"
+                : "📷 Ảnh khoảnh khắc Locket";
 
             card.Controls.Add(avatar);
-            card.Controls.Add(MakeLabel($"{post.Author} • {post.Time}", 56, 10, 9F, FontStyle.Bold, clrTextMain));
-            card.Controls.Add(MakeLabel(topText, 56, 30, 7.8F, FontStyle.Bold, post.HasTag ? clrPrimaryGreen : clrTextMuted));
+            card.Controls.Add(MakeLabel($"{post.Author} • {post.Time}", 58, 10, 9F, FontStyle.Bold, clrTextMain, 306));
+            card.Controls.Add(MakeLabel(topText, 58, 30, 7.8F, FontStyle.Bold, post.HasTag ? clrPrimaryGreen : clrTextMuted, 306));
 
             Guna2Panel photoFrame = new Guna2Panel
             {
                 Location = new Point(14, 56),
-                Size = new Size(346, 284),
-                BorderRadius = 20,
+                Size = new Size(352, 288),
+                BorderRadius = 22,
                 FillColor = post.CustomImage != null ? clrCardBg : post.PhotoBg,
                 BorderColor = clrBorderLight,
                 BorderThickness = 1,
+                UseTransparentBackground = true,
                 Cursor = isMyTopCard ? Cursors.Hand : Cursors.Default
             };
 
-            var pillCaption = MakeBtn(post.CaptionInside, 23, 224, 300, 44, 18, Color.FromArgb(32, 38, 35), Color.White, Color.FromArgb(180, 210, 195), 1, 8.2F);
+            var pillCaption = MakeBtn(post.CaptionInside, 26, 228, 300, 42, 18, Color.FromArgb(30, 41, 59), Color.White, clrSoftGreenBorder, 1, 8.2F);
             if (isMyTopCard) pillCaption.Click += (s, e) => OpenMyGalleryScreen();
 
             if (post.CustomImage != null)
             {
-                PictureBox pic = new PictureBox { Dock = DockStyle.Fill, Image = post.CustomImage, SizeMode = PictureBoxSizeMode.StretchImage };
+                Guna2PictureBox pic = new Guna2PictureBox
+                {
+                    Location = new Point(2, 2),
+                    Size = new Size(348, 284),
+                    BorderRadius = 20,
+                    Image = post.CustomImage,
+                    SizeMode = PictureBoxSizeMode.StretchImage,
+                    UseTransparentBackground = true,
+                    BackColor = Color.Transparent
+                };
                 if (isMyTopCard) pic.Click += (s, e) => OpenMyGalleryScreen();
-                pic.Controls.Add(pillCaption);
                 photoFrame.Controls.Add(pic);
+                photoFrame.Controls.Add(pillCaption);
+                pillCaption.BringToFront();
             }
             else
             {
                 Label art = new Label
                 {
-                    Text = isMyTopCard ? $"{post.Emoji}\n(Bấm vào ảnh để mở Kho ảnh cá nhân)" : post.Emoji,
-                    Font = new Font("Segoe UI Emoji", isMyTopCard ? 12.5F : 40F, FontStyle.Bold),
+                    Text = isMyTopCard ? $"{post.Emoji}\n(Bấm vào khung để mở Kho ảnh)" : post.Emoji,
+                    Font = new Font("Segoe UI Emoji", isMyTopCard ? 12F : 38F, FontStyle.Bold),
                     ForeColor = Color.White,
                     Dock = DockStyle.Fill,
                     TextAlign = ContentAlignment.MiddleCenter,
@@ -199,7 +216,7 @@ namespace PocketLog.Client
             btnBack.Click += (s, e) => ActivateMenu(btnTabFeed, BuildFeedScreen());
 
             galleryRoot.Controls.Add(btnBack);
-            galleryRoot.Controls.Add(MakeLabel($"Kho ảnh chụp của {currentFullName}", 20, 58, 12F, FontStyle.Bold, clrTextMain));
+            galleryRoot.Controls.Add(MakeLabel($"Kho ảnh của {currentFullName}", 20, 58, 11.5F, FontStyle.Bold, clrTextMain));
 
             var myPosts = posts.Where(p => p.IsMine).ToList();
             for (int i = 0; i < myPosts.Count; i++)
@@ -208,24 +225,52 @@ namespace PocketLog.Client
                 int col = i % 2, row = i / 2;
                 Guna2Panel cell = new Guna2Panel
                 {
-                    Location = new Point(20 + col * 192, 92 + row * 212),
-                    Size = new Size(182, 198),
+                    Location = new Point(20 + col * 194, 92 + row * 214),
+                    Size = new Size(184, 200),
                     BorderRadius = 16,
                     FillColor = clrCardBg,
                     BorderColor = clrBorderLight,
-                    BorderThickness = 1
+                    BorderThickness = 1,
+                    UseTransparentBackground = true
                 };
 
-                Guna2Panel mini = new Guna2Panel { Location = new Point(8, 8), Size = new Size(166, 122), BorderRadius = 12, FillColor = item.PhotoBg };
+                Guna2Panel mini = new Guna2Panel
+                {
+                    Location = new Point(8, 8),
+                    Size = new Size(168, 122),
+                    BorderRadius = 12,
+                    FillColor = item.PhotoBg,
+                    UseTransparentBackground = true
+                };
                 if (item.CustomImage != null)
-                    mini.Controls.Add(new PictureBox { Dock = DockStyle.Fill, Image = item.CustomImage, SizeMode = PictureBoxSizeMode.StretchImage });
+                {
+                    mini.Controls.Add(new Guna2PictureBox
+                    {
+                        Location = new Point(0, 0),
+                        Size = new Size(168, 122),
+                        BorderRadius = 12,
+                        Image = item.CustomImage,
+                        SizeMode = PictureBoxSizeMode.StretchImage,
+                        UseTransparentBackground = true
+                    });
+                }
                 else
-                    mini.Controls.Add(new Label { Text = item.Emoji, Font = new Font("Segoe UI Emoji", 24F), ForeColor = Color.White, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, BackColor = Color.Transparent });
+                {
+                    mini.Controls.Add(new Label
+                    {
+                        Text = item.Emoji,
+                        Font = new Font("Segoe UI Emoji", 24F),
+                        ForeColor = Color.White,
+                        Dock = DockStyle.Fill,
+                        TextAlign = ContentAlignment.MiddleCenter,
+                        BackColor = Color.Transparent
+                    });
+                }
 
                 string tagTxt = (item.TaggedFriends != null && item.TaggedFriends.Count > 0) ? $"Tag: {string.Join(", ", item.TaggedFriends)}" : "Cá nhân";
                 cell.Controls.Add(mini);
-                cell.Controls.Add(MakeLabel(item.HasTag ? item.Category : "📷 Không gắn tag", 10, 136, 8F, FontStyle.Bold, item.HasTag ? clrPrimaryGreen : clrTextMuted));
-                cell.Controls.Add(MakeLabel(item.HasTag ? $"{item.NoteTop}\n({tagTxt})" : item.CaptionInside, 10, 154, 7.6F, FontStyle.Regular, clrTextMain));
+                cell.Controls.Add(MakeLabel(item.HasTag ? item.Category : "📷 Ảnh Locket", 10, 136, 8F, FontStyle.Bold, item.HasTag ? clrPrimaryGreen : clrTextMuted, 164));
+                cell.Controls.Add(MakeLabel(item.HasTag ? $"{item.NoteTop} ({tagTxt})" : item.CaptionInside, 10, 156, 7.6F, FontStyle.Regular, clrTextMain, 164));
                 galleryRoot.Controls.Add(cell);
             }
 

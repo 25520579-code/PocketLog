@@ -99,32 +99,26 @@ namespace PocketLog.Server
                 }
 
                 // 3. Lấy TẤT CẢ các tài khoản đang có trong bảng Users của Database
-                string allUsersSql = "SELECT UserID, Username, FullName FROM Users WHERE UserID <> @uid ORDER BY UserID ASC";
-                using (SqlCommand cmdU = new SqlCommand(allUsersSql, conn))
+                if (friendIds.Count > 0)
                 {
-                    cmdU.Parameters.AddWithValue("@uid", userId);
+                    string idList = string.Join(",", friendIds);
+                    string friendUsersSql = $"SELECT UserID, Username, FullName FROM Users WHERE UserID IN ({idList}) ORDER BY FullName ASC";
+                    using (SqlCommand cmdU = new SqlCommand(friendUsersSql, conn))
                     using (SqlDataReader r = cmdU.ExecuteReader())
                     {
                         while (r.Read())
                         {
                             int uid = r.GetInt32(0);
                             string uname = r["Username"]?.ToString() ?? "";
-                            string fname = r["FullName"]?.ToString() ?? uname;
-                            // Bỏ hậu tố "(Bạn)" nếu dữ liệu cũ từ script SQL có dính chữ "(Bạn)"
-                            fname = fname.Replace(" (Bạn)", "").Trim();
+                            string fname = (r["FullName"]?.ToString() ?? uname).Replace(" (Bạn)", "").Trim();
 
-                            var fDto = new FriendDto
+                            res.MyFriends.Add(new FriendDto
                             {
                                 UserId = uid,
                                 Username = "@" + uname,
                                 FullName = fname,
                                 IsOnline = onlineUserIds.Contains(uid)
-                            };
-
-                            if (friendIds.Contains(uid))
-                                res.MyFriends.Add(fDto);
-                            else
-                                res.SuggestedUsers.Add(fDto);
+                            });
                         }
                     }
                 }

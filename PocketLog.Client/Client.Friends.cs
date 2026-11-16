@@ -9,30 +9,43 @@ namespace PocketLog.Client
 {
     public partial class Client
     {
-        // ====================================================================
-        // NGĂN KÉO BẠN BÈ & DANH BẠ
-        // ====================================================================
         private void SetupFriendsDrawer()
         {
             pnlDrawerBackdrop = new Panel
             {
-                Location = new Point(0, 52),
-                Size = new Size(420, 694),
-                BackColor = Color.FromArgb(222, 230, 226),
+                Location = new Point(4, 60),
+                Size = new Size(this.ClientSize.Width - 8, this.ClientSize.Height - 136),
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.FromArgb(215, 224, 234),
                 Visible = false
             };
             pnlDrawerBackdrop.Click += (s, e) => CloseFriendsDrawer();
 
             pnlFriendsDrawer = new Guna2Panel
             {
-                Location = new Point(420, 0),
-                Size = new Size(344, 694),
+                Location = new Point(pnlDrawerBackdrop.Width, 0),
+                Size = new Size(360, pnlDrawerBackdrop.Height),
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right,
                 FillColor = clrCardBg,
                 BorderColor = clrSoftGreenBorder,
-                BorderThickness = 2
+                BorderThickness = 2,
+                UseTransparentBackground = true
             };
             pnlDrawerBackdrop.Controls.Add(pnlFriendsDrawer);
             this.Controls.Add(pnlDrawerBackdrop);
+
+            pnlDrawerBackdrop.Resize += (s, e) =>
+            {
+                int drawerW = Math.Clamp((int)(pnlDrawerBackdrop.Width * 0.80f), 330, 520);
+                pnlFriendsDrawer.Width = drawerW;
+                pnlFriendsDrawer.Height = pnlDrawerBackdrop.Height;
+                if (pnlDrawerBackdrop.Visible)
+                {
+                    drawerTargetX = pnlDrawerBackdrop.Width - drawerW;
+                    pnlFriendsDrawer.Left = drawerTargetX;
+                    RenderFriendsDrawerContent("");
+                }
+            };
 
             drawerTimer = new System.Windows.Forms.Timer { Interval = 12 };
             drawerTimer.Tick += (s, e) =>
@@ -40,12 +53,12 @@ namespace PocketLog.Client
                 int cur = pnlFriendsDrawer.Left;
                 if (cur > drawerTargetX)
                 {
-                    pnlFriendsDrawer.Left = Math.Max(drawerTargetX, cur - Math.Max(20, (cur - drawerTargetX) / 2));
+                    pnlFriendsDrawer.Left = Math.Max(drawerTargetX, cur - Math.Max(25, (cur - drawerTargetX) / 2));
                 }
                 else if (cur < drawerTargetX)
                 {
-                    pnlFriendsDrawer.Left = Math.Min(drawerTargetX, cur + Math.Max(20, (drawerTargetX - cur) / 2));
-                    if (pnlFriendsDrawer.Left >= 420)
+                    pnlFriendsDrawer.Left = Math.Min(drawerTargetX, cur + Math.Max(25, (drawerTargetX - cur) / 2));
+                    if (pnlFriendsDrawer.Left >= pnlDrawerBackdrop.Width)
                     {
                         pnlDrawerBackdrop.Visible = false;
                         drawerTimer.Stop();
@@ -62,51 +75,60 @@ namespace PocketLog.Client
                 _ = SendPacketSafeAsync(TcpPacket.Create(PacketType.SYNC_REQ, currentUserId));
             }
 
+            pnlDrawerBackdrop.Bounds = pnlMainContainer.Bounds;
+            int drawerW = Math.Clamp((int)(pnlDrawerBackdrop.Width * 0.80f), 330, 520);
+            pnlFriendsDrawer.Size = new Size(drawerW, pnlDrawerBackdrop.Height);
+
             RenderFriendsDrawerContent("");
             pnlDrawerBackdrop.Visible = true;
             pnlDrawerBackdrop.BringToFront();
-            pnlFriendsDrawer.Left = 420;
-            drawerTargetX = 76;
+            pnlFriendsDrawer.Left = pnlDrawerBackdrop.Width;
+            drawerTargetX = pnlDrawerBackdrop.Width - drawerW;
             drawerTimer.Start();
         }
 
         private void CloseFriendsDrawer()
         {
-            drawerTargetX = 420;
+            drawerTargetX = pnlDrawerBackdrop.Width;
             drawerTimer.Start();
         }
 
         private void RenderFriendsDrawerContent(string keyword)
         {
             pnlFriendsDrawer.Controls.Clear();
-            pnlFriendsDrawer.Controls.Add(MakeLabel("👥 Kết bạn & Danh bạ CSDL", 16, 16, 11F, FontStyle.Bold, clrTextMain));
+            int dw = pnlFriendsDrawer.Width;
 
-            var btnClose = MakeBtn("✕", 294, 12, 34, 32, 10, clrAppBg, clrTextMain, clrBorderLight);
+            pnlFriendsDrawer.Controls.Add(MakeLabel("👥 Bạn bè của bạn", 16, 16, 11F, FontStyle.Bold, clrTextMain));
+
+            var btnClose = MakeBtn("✕", dw - 48, 12, 34, 32, 10, clrAppBg, clrTextMain, clrBorderLight);
             btnClose.Click += (s, e) => CloseFriendsDrawer();
             pnlFriendsDrawer.Controls.Add(btnClose);
 
+            int searchW = dw - 130;
             Guna2TextBox txtSearch = new Guna2TextBox
             {
                 Text = keyword,
-                PlaceholderText = "🔍 Tìm hoặc nhập tên tài khoản...",
-                Location = new Point(16, 52),
-                Size = new Size(216, 36),
+                PlaceholderText = "Nhập đúng tên/username để kết bạn...",
+                Location = new Point(16, 54),
+                Size = new Size(searchW, 38),
                 BorderRadius = 10,
                 FillColor = clrAppBg,
                 BorderColor = clrSoftGreenBorder,
                 Font = new Font("Segoe UI", 8.8F)
             };
 
-            var btnAddNew = MakeBtn("+ Kết bạn", 238, 52, 90, 36, 10, clrPrimaryGreen, Color.White, clrSoftGreenBorder);
+            var btnAddNew = MakeBtn("+ Kết bạn", 16 + searchW + 6, 54, 92, 38, 10, clrPrimaryGreen, Color.White, clrPrimaryGreen);
 
             Panel listScroll = new Panel
             {
-                Location = new Point(14, 96),
-                Size = new Size(318, 580),
+                Location = new Point(14, 102),
+                Size = new Size(dw - 26, pnlFriendsDrawer.Height - 114),
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
                 AutoScroll = true
             };
             listScroll.MouseEnter += (s, e) => listScroll.Focus();
 
+            int rowW = dw - 44;
             Action<string> refreshList = (kw) =>
             {
                 listScroll.Controls.Clear();
@@ -117,46 +139,23 @@ namespace PocketLog.Client
                     .Where(f => string.IsNullOrEmpty(q) || f.Name.ToLower().Contains(q) || f.Handle.ToLower().Contains(q))
                     .ToList();
 
-                listScroll.Controls.Add(MakeLabel($"✓ Bạn bè đã kết nối ({filteredFriends.Count}) - Thấy bài nhau", 2, y, 8.2F, FontStyle.Bold, clrPrimaryGreen));
-                y += 22;
+                listScroll.Controls.Add(MakeLabel($"✓ Bạn bè đã kết nối ({filteredFriends.Count})", 2, y, 8.8F, FontStyle.Bold, clrPrimaryGreen));
+                y += 26;
 
                 if (filteredFriends.Count == 0)
                 {
-                    listScroll.Controls.Add(MakeLabel("Chưa có bạn bè. Bấm '+ Kết bạn' ở danh sách dưới!", 4, y, 7.8F, FontStyle.Italic, clrTextMuted));
-                    y += 26;
+                    listScroll.Controls.Add(MakeLabel("Chưa có bạn bè nào.\nHãy nhập tên tài khoản của bạn bè vào ô phía trên và bấm '+ Kết bạn'!", 4, y, 8.2F, FontStyle.Italic, clrTextMuted, rowW));
+                    y += 48;
                 }
                 else
                 {
                     foreach (var fUser in filteredFriends)
                     {
-                        var card = BuildFriendItemRow(fUser, true, null);
+                        var card = BuildFriendItemRow(fUser, rowW);
                         card.Location = new Point(0, y);
                         listScroll.Controls.Add(card);
-                        y += 56;
+                        y += 58;
                     }
-                }
-
-                y += 10;
-                var sugs = friendSuggestions
-                    .Where(u => string.IsNullOrEmpty(q) || u.Name.ToLower().Contains(q) || u.Handle.ToLower().Contains(q))
-                    .ToList();
-
-                listScroll.Controls.Add(MakeLabel($"🌐 Tất cả tài khoản khác trong Database ({sugs.Count})", 2, y, 8.2F, FontStyle.Bold, clrIndigo));
-                y += 22;
-
-                foreach (var sUser in sugs)
-                {
-                    var card = BuildFriendItemRow(sUser, false, async () =>
-                    {
-                        await SendPacketSafeAsync(TcpPacket.Create(PacketType.ADD_FRIEND_REQ, new AddFriendRequestDto
-                        {
-                            RequesterId = currentUserId,
-                            TargetKeyword = sUser.Name
-                        }));
-                    });
-                    card.Location = new Point(0, y);
-                    listScroll.Controls.Add(card);
-                    y += 56;
                 }
 
                 listScroll.Controls.Add(new Label { Location = new Point(0, y), Size = new Size(10, 20) });
@@ -179,41 +178,35 @@ namespace PocketLog.Client
             pnlFriendsDrawer.Controls.AddRange(new Control[] { txtSearch, btnAddNew, listScroll });
         }
 
-        private Guna2Panel BuildFriendItemRow(FriendUser u, bool isFriend, Action? onAdd)
+        private Guna2Panel BuildFriendItemRow(FriendUser u, int rowWidth)
         {
             Guna2Panel row = new Guna2Panel
             {
-                Size = new Size(296, 50),
+                Size = new Size(rowWidth, 52),
                 BorderRadius = 12,
-                FillColor = isFriend ? clrAppBg : clrSoftIndigo,
-                BorderColor = isFriend ? clrBorderLight : Color.FromArgb(180, 188, 240),
-                BorderThickness = 1
+                FillColor = clrAppBg,
+                BorderColor = clrBorderLight,
+                BorderThickness = 1,
+                UseTransparentBackground = true
             };
 
             Guna2CircleButton avt = new Guna2CircleButton
             {
                 Text = string.IsNullOrEmpty(u.Name) ? "U" : u.Name.Substring(0, 1).ToUpper(),
-                Size = new Size(32, 32),
-                Location = new Point(8, 9),
-                FillColor = isFriend ? clrPrimaryGreen : clrIndigo,
+                Size = new Size(34, 34),
+                Location = new Point(10, 9),
+                FillColor = clrPrimaryGreen,
                 ForeColor = Color.White,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9.2F, FontStyle.Bold),
+                UseTransparentBackground = true,
+                BackColor = Color.Transparent
             };
 
             row.Controls.Add(avt);
-            row.Controls.Add(MakeLabel(u.Name, 46, 7, 8.8F, FontStyle.Bold, clrTextMain));
-            row.Controls.Add(MakeLabel($"{u.Handle} • {(u.IsOnline ? "🟢 Online" : "⚪ Offline")}", 46, 26, 7.6F, FontStyle.Regular, u.IsOnline ? clrPrimaryGreen : clrTextMuted));
+            row.Controls.Add(MakeLabel(u.Name, 52, 7, 9F, FontStyle.Bold, clrTextMain, rowWidth - 150));
+            row.Controls.Add(MakeLabel($"{u.Handle} • {(u.IsOnline ? "🟢 Online" : "⚪ Offline")}", 52, 27, 7.8F, FontStyle.Regular, u.IsOnline ? clrPrimaryGreen : clrTextMuted, rowWidth - 150));
+            row.Controls.Add(MakeBtn("✓ Bạn bè", rowWidth - 90, 12, 80, 28, 8, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.8F));
 
-            if (!isFriend && onAdd != null)
-            {
-                var btn = MakeBtn("+ Kết bạn", 204, 10, 84, 30, 8, clrIndigo, Color.White, clrIndigo, 1, 7.6F);
-                btn.Click += (s, e) => onAdd();
-                row.Controls.Add(btn);
-            }
-            else
-            {
-                row.Controls.Add(MakeBtn("✓ Bạn bè", 208, 11, 80, 28, 8, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.6F));
-            }
             return row;
         }
     }
