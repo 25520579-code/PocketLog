@@ -1,27 +1,35 @@
+using System;
+using System.Drawing;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 using PocketLog.Shared;
 
 namespace PocketLog.Server
 {
     public partial class Server
     {
-        // ====================================================================
-        // TCP LISTENER PORT 8888
-        // ====================================================================
         private void StartTcpServer()
         {
+            if (isRunning) return;
             try
             {
                 tcpListener = new TcpListener(IPAddress.Any, 8888);
                 tcpListener.Start();
                 isRunning = true;
+
                 lblStatus.Text = "● SERVER ĐANG HOẠT ĐỘNG (PORT 8888)";
+                lblStatus.ForeColor = Color.FromArgb(46, 204, 113);
+                btnToggleServer.Text = "⏹ Dừng Server";
+                btnToggleServer.BackColor = Color.FromArgb(192, 57, 43);
+
                 Log("✓ Đã mở cổng TCP 8888. Sẵn sàng nhận kết nối...");
 
                 Task.Run(async () =>
                 {
-                    while (isRunning)
+                    while (isRunning && tcpListener != null)
                     {
                         try
                         {
@@ -44,8 +52,37 @@ namespace PocketLog.Server
             }
         }
 
+        private void StopTcpServer()
+        {
+            if (!isRunning) return;
+            isRunning = false;
+
+            try { tcpListener?.Stop(); } catch { }
+            tcpListener = null;
+
+            foreach (var client in connectedClients.Keys.ToList())
+            {
+                try { client.Close(); } catch { }
+            }
+            connectedClients.Clear();
+            clientSendLocks.Clear();
+
+            if (!IsDisposed)
+            {
+                RefreshOnlineListUI();
+                lblStatus.Text = "● SERVER ĐÃ TẠM DỪNG";
+                lblStatus.ForeColor = Color.FromArgb(231, 76, 60);
+                btnToggleServer.Text = "▶ Bật lại Server";
+                btnToggleServer.BackColor = Color.FromArgb(29, 99, 76);
+                Log("⏹ Đã dừng TCP Server và đóng các kết nối hiện tại.");
+            }
+        }
+
         private async Task HandleClientAsync(TcpClient client)
         {
+            string remoteEp = "Unknown";
+            try { remoteEp = client.Client.RemoteEndPoint?.ToString() ?? "Unknown"; } catch { }
+
             NetworkStream stream = client.GetStream();
             try
             {
@@ -59,15 +96,25 @@ namespace PocketLog.Server
             }
             catch (Exception ex)
             {
-                Log($"⚠ Ngắt kết nối từ {client.Client.RemoteEndPoint}: {ex.Message}");
+                if (isRunning)
+                {
+                    Log($"⚠ Ngắt kết nối từ {remoteEp}: {ex.Message}");
+                }
             }
             finally
             {
                 connectedClients.TryRemove(client, out _);
-                clientSendLocks.TryRemove(client, out _);
-                client.Close();
-                RefreshOnlineListUI();
-                await BroadcastRefreshToAllClientsAsync();
+                if (clientSendLocks.TryRemove(client, out var sem))
+                {
+                    try { sem.Dispose(); } catch { }
+                }
+                try { client.Close(); } catch { }
+
+                if (isRunning && !IsDisposed)
+                {
+                    RefreshOnlineListUI();
+                    await BroadcastRefreshToAllClientsAsync();
+                }
             }
         }
 
@@ -86,7 +133,6 @@ namespace PocketLog.Server
             }
             catch
             {
-                // Tránh crash nếu Client vừa ngắt kết nối đột ngột
             }
             finally
             {

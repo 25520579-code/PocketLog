@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading.Tasks;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace PocketLog.Server
@@ -37,6 +36,8 @@ namespace PocketLog.Server
             BuildServerDashboardUI();
             EnsureDatabaseSetup();
             StartTcpServer();
+
+            this.FormClosing += (s, e) => StopTcpServer();
         }
 
         private void BuildServerDashboardUI()
@@ -71,13 +72,19 @@ namespace PocketLog.Server
 
             btnToggleServer = new Button
             {
-                Text = "Đang chạy (Port 8888)",
+                Text = "⏹ Dừng Server",
                 Location = new Point(490, 18),
                 Size = new Size(155, 38),
-                BackColor = Color.FromArgb(29, 99, 76),
+                BackColor = Color.FromArgb(192, 57, 43),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold)
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            btnToggleServer.Click += (s, e) =>
+            {
+                if (isRunning) StopTcpServer();
+                else StartTcpServer();
             };
 
             Label lblOnline = new Label
@@ -122,6 +129,7 @@ namespace PocketLog.Server
 
         private void Log(string msg)
         {
+            if (IsDisposed) return;
             if (InvokeRequired)
             {
                 BeginInvoke(new Action(() => Log(msg)));
@@ -133,6 +141,7 @@ namespace PocketLog.Server
 
         private void RefreshOnlineListUI()
         {
+            if (IsDisposed) return;
             if (InvokeRequired)
             {
                 BeginInvoke(new Action(RefreshOnlineListUI));
@@ -141,14 +150,12 @@ namespace PocketLog.Server
             lstClients.Items.Clear();
             foreach (var kv in connectedClients)
             {
-                string ep = kv.Key.Client.RemoteEndPoint?.ToString() ?? "Unknown";
+                string ep = "Disconnected";
+                try { ep = kv.Key.Client?.RemoteEndPoint?.ToString() ?? "Unknown"; } catch { }
                 lstClients.Items.Add($"User#{kv.Value} ({ep})");
             }
         }
 
-        // ====================================================================
-        // 1. KHỞI TẠO CSDL 7 BẢNG & ĐẢM BẢO CÁC TÀI KHOẢN MẪU LUÔN CÓ SẴN
-        // ====================================================================
         private void EnsureDatabaseSetup()
         {
             try
@@ -163,10 +170,11 @@ namespace PocketLog.Server
                     }
                 }
 
+                string defaultPassHash = HashPassword("123");
+
                 using (SqlConnection conn = new SqlConnection(dbConnStr))
                 {
                     conn.Open();
-                    // Thay thế đoạn cuối trong chuỗi schemaSql của hàm EnsureDatabaseSetup() (file Server.cs):
                     string schemaSql = @"
 IF OBJECT_ID('dbo.Users', 'U') IS NULL
 BEGIN
@@ -229,22 +237,43 @@ BEGIN
     );
 END
 
--- Xóa các tài khoản mẫu mặc định trước đây khỏi Database (nếu có)
-DELETE FROM SplitBills WHERE DebtorID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'))
-                          OR PostID IN (SELECT PostID FROM ExpensePosts WHERE UserID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao')));
-DELETE FROM ExpenseItems WHERE PostID IN (SELECT PostID FROM ExpensePosts WHERE UserID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao')));
-DELETE FROM ExpensePosts WHERE UserID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'));
-DELETE FROM Friendships WHERE RequesterID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'))
-                           OR AddresseeID IN (SELECT UserID FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao'));
-DELETE FROM Users WHERE Username IN ('huyhoang','giahuy','minhkhoa','thehung','thanhthao');
-";
+IF OBJECT_ID('dbo.UserCategoryBudgets', 'U') IS NULL
+BEGIN
+    CREATE TABLE UserCategoryBudgets (
+        UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+        Category NVARCHAR(50) NOT NULL,
+        BudgetLimit INT NOT NULL,
+        PRIMARY KEY (UserID, Category)
+    );
+END";
 
                     using (SqlCommand cmd = new SqlCommand(schemaSql, conn))
                     {
                         cmd.ExecuteNonQuery();
                     }
+
+                    // Chỉ khởi tạo tài khoản mẫu nếu bảng Users hoàn toàn trống
+                    string seedSql = @"
+IF NOT EXISTS (SELECT 1 FROM Users)
+BEGIN
+    INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
+    VALUES 
+        ('huyhoang', @defHash, N'Huy Hoàng', 3500000),
+        ('giahuy', @defHash, N'Gia Huy', 2500000),
+        ('minhkhoa', @defHash, N'Minh Khoa', 2000000);
+
+    INSERT INTO Friendships (RequesterID, AddresseeID, Status)
+    VALUES 
+        (1, 2, 'Accepted'),
+        (1, 3, 'Accepted');
+END";
+                    using (SqlCommand seedCmd = new SqlCommand(seedSql, conn))
+                    {
+                        seedCmd.Parameters.AddWithValue("@defHash", defaultPassHash);
+                        seedCmd.ExecuteNonQuery();
+                    }
                 }
-                Log("✓ Đã kết nối CSDL PocketLogDB và kiểm tra đầy đủ danh sách tài khoản.");
+                Log("✓ Đã kết nối CSDL PocketLogDB (đầy đủ 8 bảng, bảo toàn dữ liệu hiện có).");
             }
             catch (Exception ex)
             {

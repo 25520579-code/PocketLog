@@ -2,11 +2,14 @@ using System.Collections.Generic;
 
 namespace PocketLog.Shared
 {
-    // 1. Gói tin Đăng nhập
+    // 1. Gói tin Đăng nhập & Đăng ký
     public class LoginRequestDto
     {
         public string Username { get; set; } = "";
         public string Password { get; set; } = "";
+        public string FullName { get; set; } = "";
+        public bool IsRegister { get; set; }
+        public int InitialBudget { get; set; } = 3500000;
     }
 
     public class LoginResponseDto
@@ -34,6 +37,12 @@ namespace PocketLog.Shared
         public string TargetKeyword { get; set; } = "";
     }
 
+    public class AddFriendResponseDto
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = "";
+    }
+
     // 3. Gói tin Bài đăng Locket & Chi tiêu
     public class PostDto
     {
@@ -47,7 +56,7 @@ namespace PocketLog.Shared
         public string CaptionInside { get; set; } = "";
         public int Amount { get; set; }
         public string Time { get; set; } = "";
-        public string ImageBase64 { get; set; } = ""; // Chứa ảnh thật truyền qua TCP
+        public string ImageBase64 { get; set; } = "";
     }
 
     // 4. Gói tin Chia tiền hóa đơn (SplitBills)
@@ -90,10 +99,18 @@ namespace PocketLog.Shared
         public int NewMonthlyBudget { get; set; }
     }
 
+    public class UpdateCategoryBudgetRequestDto
+    {
+        public int UserId { get; set; }
+        public string Category { get; set; } = "";
+        public int NewLimit { get; set; }
+    }
+
     // 5. Gói tin Đồng bộ toàn bộ dữ liệu về Client
     public class SyncDataResponseDto
     {
         public int MonthlyBudget { get; set; }
+        public Dictionary<string, int> CategoryBudgets { get; set; } = new Dictionary<string, int>();
         public List<FriendDto> MyFriends { get; set; } = new List<FriendDto>();
         public List<FriendDto> SuggestedUsers { get; set; } = new List<FriendDto>();
         public List<PostDto> Posts { get; set; } = new List<PostDto>();

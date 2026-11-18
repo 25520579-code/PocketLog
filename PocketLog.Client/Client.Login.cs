@@ -12,147 +12,172 @@ namespace PocketLog.Client
     {
         private void ShowLoginScreen() => ShowAuthScreen();
 
-        private void ShowAuthScreen()
+        private void ShowAuthScreen(string initialNotice = "")
         {
             StopWebcam();
             activeTabName = "AUTH";
             pnlBottomNav.Visible = false;
-            btnLogoutTop.Visible = false;
-            lblHeaderUser.Text = "";
+            pnlDrawerBackdrop.Visible = false;
+            UpdateHeaderUserUI("");
 
-            Panel root = new Panel { BackColor = clrAppBg, Dock = DockStyle.Fill };
+            Panel page = CreateResponsiveScrollPage(out Panel col);
+            int w = col.Width;
+            int y = 16;
             bool isRegisterMode = false;
 
             Guna2Panel pnlHero = new Guna2Panel
             {
-                Location = new Point(22, 18),
-                Size = new Size(376, 96),
+                Location = new Point(0, y),
+                Size = new Size(w, 96),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 22,
                 FillColor = clrPrimaryGreen,
                 UseTransparentBackground = true
             };
-            pnlHero.Controls.Add(MakeLabel("📸 PocketLog Locket & Bill", 20, 18, 13.5F, FontStyle.Bold, Color.White));
-            pnlHero.Controls.Add(MakeLabel("Chia sẻ khoảnh khắc & quản lý chi tiêu qua TCP Socket", 20, 52, 8.5F, FontStyle.Regular, clrSoftGreenBg));
-            root.Controls.Add(pnlHero);
+            pnlHero.Controls.Add(MakeSoftIconBadge(UiIcon.Camera, 18, 22, 46, 15, Color.FromArgb(88, 152, 250), Color.White));
+            var lblHeroTitle = MakeLabel("PocketLog Locket & Bill", 76, 22, 13F, FontStyle.Bold, Color.White);
+            lblHeroTitle.Font = FontBold(13F);
+            pnlHero.Controls.Add(lblHeroTitle);
+            pnlHero.Controls.Add(MakeLabel("Chia sẻ khoảnh khắc & chia tiền nhóm tức thì", 76, 52, 8.8F, FontStyle.Regular, clrSoftGreenBg, w - 92));
+            col.Controls.Add(pnlHero);
+            y += 110;
 
             Guna2Panel cardServer = new Guna2Panel
             {
-                Location = new Point(22, 128),
-                Size = new Size(376, 106),
-                BorderRadius = 18,
-                FillColor = clrCardBg,
-                BorderColor = clrBorderLight,
-                BorderThickness = 1,
-                UseTransparentBackground = true
-            };
-            cardServer.Controls.Add(MakeLabel("🌐 Máy chủ kết nối (TCP Server Host)", 16, 12, 9.2F, FontStyle.Bold, clrPrimaryGreen));
-            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 nếu cùng máy, hoặc IP LAN của Server:", 16, 34, 8F, FontStyle.Regular, clrTextMuted));
-
-            Guna2TextBox txtServerIp = new Guna2TextBox
-            {
-                Text = currentServerIp,
-                PlaceholderText = "IP Server (VD: 127.0.0.1)",
-                Location = new Point(16, 58),
-                Size = new Size(240, 36),
-                BorderRadius = 10,
-                FillColor = clrAppBg,
-                BorderColor = clrBorderLight,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                ForeColor = clrTextMain
-            };
-
-            Guna2TextBox txtServerPort = new Guna2TextBox
-            {
-                Text = currentServerPort.ToString(),
-                PlaceholderText = "Port",
-                Location = new Point(264, 58),
-                Size = new Size(96, 36),
-                BorderRadius = 10,
-                FillColor = clrAppBg,
-                BorderColor = clrBorderLight,
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                ForeColor = clrIndigo
-            };
-            cardServer.Controls.Add(txtServerIp);
-            cardServer.Controls.Add(txtServerPort);
-            root.Controls.Add(cardServer);
-
-            Guna2Panel cardAuth = new Guna2Panel
-            {
-                Location = new Point(22, 248),
-                Size = new Size(376, 348),
+                Location = new Point(0, y),
+                Size = new Size(w, 108),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 20,
                 FillColor = clrCardBg,
                 BorderColor = clrBorderLight,
                 BorderThickness = 1,
                 UseTransparentBackground = true
             };
+            cardServer.Controls.Add(MakeLabel("Máy chủ kết nối (TCP Server)", 16, 12, 9.2F, FontStyle.Bold, clrPrimaryGreen));
+            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 nếu chạy cùng máy hoặc IP LAN của Server", 16, 34, 8.2F, FontStyle.Regular, clrTextMuted, w - 32));
 
-            var btnModeLogin = MakeBtn("Đăng nhập", 16, 16, 168, 38, 12, clrPrimaryGreen, Color.White, clrPrimaryGreen, 1, 9F);
-            var btnModeReg = MakeBtn("Tạo tài khoản mới", 192, 16, 168, 38, 12, clrAppBg, clrTextMain, clrBorderLight, 1, 9F);
-
-            Label lblUserTitle = MakeLabel("Tên tài khoản / Username:", 16, 68, 8.8F, FontStyle.Bold, clrTextMain);
-            Guna2TextBox txtUsername = new Guna2TextBox
+            var gridServer = new BufferedTableLayout
             {
-                Text = "",
-                PlaceholderText = "Nhập tên tài khoản của bạn...",
-                Location = new Point(16, 92),
-                Size = new Size(344, 38),
-                BorderRadius = 10,
-                FillColor = clrAppBg,
+                Location = new Point(14, 58),
+                Size = new Size(w - 28, 38),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                ColumnCount = 2,
+                RowCount = 1
+            };
+            gridServer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 72F));
+            gridServer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28F));
+            gridServer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var txtServerIp = MakeTextBox(currentServerIp, "IP Server (127.0.0.1)", 0, 0, 100, 36, clrCardBg, true);
+            txtServerIp.Dock = DockStyle.Fill;
+            txtServerIp.Margin = new Padding(2, 0, 6, 0);
+
+            var txtServerPort = MakeTextBox(currentServerPort.ToString(), "Port", 0, 0, 80, 36, clrCardBg, true);
+            txtServerPort.Dock = DockStyle.Fill;
+            txtServerPort.Margin = new Padding(4, 0, 2, 0);
+            txtServerPort.ForeColor = clrIndigo;
+
+            gridServer.Controls.Add(txtServerIp, 0, 0);
+            gridServer.Controls.Add(txtServerPort, 1, 0);
+            cardServer.Controls.Add(gridServer);
+            col.Controls.Add(cardServer);
+            y += 122;
+
+            Guna2Panel cardAuth = new Guna2Panel
+            {
+                Location = new Point(0, y),
+                Size = new Size(w, 384),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                BorderRadius = 22,
+                FillColor = clrCardBg,
                 BorderColor = clrBorderLight,
-                Font = new Font("Segoe UI", 9.5F)
+                BorderThickness = 1,
+                UseTransparentBackground = true
             };
 
-            Label lblPassTitle = MakeLabel("Mật khẩu:", 16, 140, 8.8F, FontStyle.Bold, clrTextMain);
-            Guna2TextBox txtPassword = new Guna2TextBox
+            // Thanh chuyển tab dạng Segmented Pill chuẩn Android
+            Guna2Panel segTrack = new Guna2Panel
             {
-                Text = "",
-                PlaceholderText = "Nhập mật khẩu...",
-                PasswordChar = '●',
-                Location = new Point(16, 164),
-                Size = new Size(344, 38),
-                BorderRadius = 10,
+                Location = new Point(16, 16),
+                Size = new Size(w - 32, 42),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                BorderRadius = 14,
                 FillColor = clrAppBg,
-                BorderColor = clrBorderLight,
-                Font = new Font("Segoe UI", 9.5F)
+                UseTransparentBackground = true
             };
+            var gridSeg = new BufferedTableLayout
+            {
+                Location = new Point(3, 3),
+                Size = new Size(segTrack.Width - 6, 36),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                ColumnCount = 2,
+                RowCount = 1
+            };
+            gridSeg.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            gridSeg.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            gridSeg.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ):", 16, 210, 8.5F, FontStyle.Bold, clrIndigo);
-            Guna2TextBox txtInitBudget = new Guna2TextBox
-            {
-                Text = "3500000",
-                Location = new Point(16, 232),
-                Size = new Size(344, 36),
-                BorderRadius = 10,
-                FillColor = clrAppBg,
-                BorderColor = clrSoftGreenBorder,
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                Visible = false
-            };
+            var btnModeLogin = MakeBtn("Đăng nhập", 0, 0, 100, 34, 11, clrPrimaryGreen, Color.White, Color.Transparent, 0, 9F);
+            btnModeLogin.Dock = DockStyle.Fill;
+            btnModeLogin.Margin = new Padding(1);
+
+            var btnModeReg = MakeBtn("Tạo tài khoản", 0, 0, 100, 34, 11, Color.Transparent, clrIndigo, Color.Transparent, 0, 9F);
+            btnModeReg.Dock = DockStyle.Fill;
+            btnModeReg.Margin = new Padding(1);
+
+            gridSeg.Controls.Add(btnModeLogin, 0, 0);
+            gridSeg.Controls.Add(btnModeReg, 1, 0);
+            segTrack.Controls.Add(gridSeg);
+
+            Label lblUserTitle = MakeLabel("Tên tài khoản hoặc họ tên hiển thị", 16, 70, 8.8F, FontStyle.Bold, clrTextMain);
+            var txtUsername = MakeTextBox("", "Nhập tên tài khoản...", 16, 94, w - 32, 40, clrCardBg);
+            txtUsername.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            Label lblPassTitle = MakeLabel("Mật khẩu", 16, 144, 8.8F, FontStyle.Bold, clrTextMain);
+            var txtPassword = MakeTextBox("", "Nhập mật khẩu...", 16, 168, w - 32, 40, clrCardBg);
+            txtPassword.PasswordChar = '●';
+            txtPassword.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ)", 16, 216, 8.6F, FontStyle.Bold, clrIndigo);
+            var txtInitBudget = MakeTextBox("3500000", "Ví dụ: 3500000", 16, 238, w - 32, 38, clrCardBg, true);
+            txtInitBudget.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lblInitBudget.Visible = false;
+            txtInitBudget.Visible = false;
 
-            Label lblAuthStatus = MakeLabel("💡 Nhập tài khoản để đăng nhập hoặc chuyển sang Tạo tài khoản.", 16, 218, 8F, FontStyle.Italic, clrTextMuted, 344);
+            string defaultHint = string.IsNullOrEmpty(initialNotice)
+                ? "Nhập tài khoản có sẵn để đăng nhập (mẫu: huyhoang / 123)."
+                : initialNotice;
 
-            var btnSubmitAuth = MakeBtn("Kết nối TCP & Đăng nhập", 16, 280, 344, 48, 14, clrPrimaryGreen, Color.White, clrPrimaryGreen, 1, 10F);
+            Label lblAuthStatus = new Label
+            {
+                Text = defaultHint,
+                Location = new Point(16, 222),
+                Size = new Size(w - 32, 38),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Font = FontRegular(8.4F),
+                ForeColor = string.IsNullOrEmpty(initialNotice) ? clrTextMuted : clrRedDanger,
+                BackColor = Color.Transparent
+            };
+
+            var btnSubmitAuth = MakeBtn("Kết nối & Đăng nhập", 16, 320, w - 32, 46, 23, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9.8F);
+            btnSubmitAuth.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             btnModeLogin.Click += (s, e) =>
             {
                 isRegisterMode = false;
                 btnModeLogin.FillColor = clrPrimaryGreen;
                 btnModeLogin.ForeColor = Color.White;
-                btnModeLogin.BorderColor = clrPrimaryGreen;
 
-                btnModeReg.FillColor = clrAppBg;
-                btnModeReg.ForeColor = clrTextMain;
-                btnModeReg.BorderColor = clrBorderLight;
+                btnModeReg.FillColor = Color.Transparent;
+                btnModeReg.ForeColor = clrIndigo;
 
                 lblInitBudget.Visible = false;
                 txtInitBudget.Visible = false;
-                lblAuthStatus.Location = new Point(16, 218);
-                lblAuthStatus.Text = "💡 Nhập tài khoản đã có để đăng nhập vào hệ thống.";
+                lblAuthStatus.Location = new Point(16, 222);
+                lblAuthStatus.Text = "Nhập tài khoản đã có để đăng nhập vào hệ thống.";
                 lblAuthStatus.ForeColor = clrTextMuted;
-                btnSubmitAuth.Text = "Kết nối TCP & Đăng nhập";
+                txtUsername.PlaceholderText = "Nhập tên tài khoản...";
+                btnSubmitAuth.Text = "Kết nối & Đăng nhập";
             };
 
             btnModeReg.Click += (s, e) =>
@@ -160,18 +185,17 @@ namespace PocketLog.Client
                 isRegisterMode = true;
                 btnModeReg.FillColor = clrPrimaryGreen;
                 btnModeReg.ForeColor = Color.White;
-                btnModeReg.BorderColor = clrPrimaryGreen;
 
-                btnModeLogin.FillColor = clrAppBg;
-                btnModeLogin.ForeColor = clrTextMain;
-                btnModeLogin.BorderColor = clrBorderLight;
+                btnModeLogin.FillColor = Color.Transparent;
+                btnModeLogin.ForeColor = clrIndigo;
 
                 lblInitBudget.Visible = true;
                 txtInitBudget.Visible = true;
-                lblAuthStatus.Location = new Point(16, 272);
-                lblAuthStatus.Text = "";
-                txtUsername.PlaceholderText = "Nhập tên tài khoản mới muốn tạo...";
-                btnSubmitAuth.Text = "Tạo tài khoản & Kết nối Server";
+                lblAuthStatus.Location = new Point(16, 280);
+                lblAuthStatus.Text = "Điền tên hiển thị, mật khẩu và hạn mức chi tiêu tháng.";
+                lblAuthStatus.ForeColor = clrTextMuted;
+                txtUsername.PlaceholderText = "Nhập tên hiển thị / tài khoản mới...";
+                btnSubmitAuth.Text = "Tạo tài khoản & Kết nối";
             };
 
             btnSubmitAuth.Click += async (s, e) =>
@@ -184,14 +208,28 @@ namespace PocketLog.Client
 
                 if (string.IsNullOrEmpty(user))
                 {
-                    lblAuthStatus.Text = "⚠ Vui lòng nhập tên tài khoản!";
+                    lblAuthStatus.Text = "Vui lòng nhập tên tài khoản!";
+                    lblAuthStatus.ForeColor = clrRedDanger;
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(pass))
+                {
+                    lblAuthStatus.Text = "Vui lòng nhập mật khẩu!";
                     lblAuthStatus.ForeColor = clrRedDanger;
                     return;
                 }
 
                 btnSubmitAuth.Enabled = false;
-                lblAuthStatus.Text = $"⏳ Đang kết nối tới {ip}:{port}...";
+                lblAuthStatus.Text = $"Đang kết nối tới {ip}:{port}...";
                 lblAuthStatus.ForeColor = clrPrimaryGreen;
+
+                onAuthFailedUI = (errMsg) =>
+                {
+                    lblAuthStatus.Text = errMsg;
+                    lblAuthStatus.ForeColor = clrRedDanger;
+                    btnSubmitAuth.Enabled = true;
+                };
 
                 bool ok = await ConnectAndAuthenticateAsync(ip, port, user, pass, isRegisterMode, txtInitBudget.Text, lblAuthStatus);
                 if (!ok)
@@ -202,16 +240,17 @@ namespace PocketLog.Client
 
             cardAuth.Controls.AddRange(new Control[]
             {
-                btnModeLogin, btnModeReg,
-                lblUserTitle, txtUsername,
+                segTrack, lblUserTitle, txtUsername,
                 lblPassTitle, txtPassword,
                 lblInitBudget, txtInitBudget,
                 lblAuthStatus, btnSubmitAuth
             });
 
-            root.Controls.Add(cardAuth);
+            col.Controls.Add(cardAuth);
+            col.Height = y + 404;
+
             pnlMainContainer.Controls.Clear();
-            pnlMainContainer.Controls.Add(root);
+            pnlMainContainer.Controls.Add(page);
         }
 
         private async Task<bool> ConnectAndAuthenticateAsync(string ip, int port, string username, string password, bool isRegister, string initBudgetStr, Label lblStatus)
@@ -226,7 +265,8 @@ namespace PocketLog.Client
 
                 if (await Task.WhenAny(connectTask, timeoutTask) == timeoutTask)
                 {
-                    lblStatus.Text = $"❌ Không tìm thấy Server tại {ip}:{port}.";
+                    CloseCurrentSocket();
+                    lblStatus.Text = $"Không tìm thấy Server tại {ip}:{port}.";
                     lblStatus.ForeColor = clrRedDanger;
                     return false;
                 }
@@ -237,25 +277,27 @@ namespace PocketLog.Client
                 currentServerIp = ip;
                 currentServerPort = port;
 
+                int.TryParse(initBudgetStr.Replace(".", "").Replace(",", ""), out int customBudget);
+                if (customBudget <= 0) customBudget = 3500000;
+
                 _ = Task.Run(() => ListenFromServerLoopAsync());
 
                 var loginReq = new LoginRequestDto
                 {
                     Username = username,
-                    Password = string.IsNullOrEmpty(password) ? "123" : password
+                    FullName = username,
+                    Password = password,
+                    IsRegister = isRegister,
+                    InitialBudget = customBudget
                 };
                 await SendPacketSafeAsync(TcpPacket.Create(PacketType.LOGIN_REQ, loginReq));
-
-                if (isRegister && int.TryParse(initBudgetStr.Replace(".", "").Replace(",", ""), out int customBudget) && customBudget > 0)
-                {
-                    totalBudgetLimit = customBudget;
-                }
 
                 return true;
             }
             catch (Exception ex)
             {
-                lblStatus.Text = "❌ Lỗi kết nối: " + ex.Message;
+                CloseCurrentSocket();
+                lblStatus.Text = "Lỗi kết nối: " + ex.Message;
                 lblStatus.ForeColor = clrRedDanger;
                 return false;
             }
@@ -265,7 +307,10 @@ namespace PocketLog.Client
         {
             StopWebcam();
             CloseCurrentSocket();
+            DisposeCachedImages();
+            InitializeDefaultBudgets();
             currentUserId = 0;
+            currentUsername = "";
             currentFullName = "";
             ShowAuthScreen();
         }

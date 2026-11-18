@@ -1,13 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.Net.Sockets;
+using System.Threading.Tasks;
 using PocketLog.Shared;
 
 namespace PocketLog.Client
 {
     public partial class Client
     {
-        // ====================================================================
-        // TRUYỀN/NHẬN GÓI TIN TCP & ĐỒNG BỘ DỮ LIỆU
-        // ====================================================================
         private async Task SendPacketSafeAsync(TcpPacket packet)
         {
             if (!isConnected || netStream == null) return;
@@ -25,12 +26,17 @@ namespace PocketLog.Client
 
         private async Task ListenFromServerLoopAsync()
         {
+            bool unexpectedDisconnect = false;
             try
             {
                 while (isConnected && netStream != null && tcpClient != null && tcpClient.Connected)
                 {
                     TcpPacket? packet = await TcpPacketHelper.ReadPacketAsync(netStream);
-                    if (packet == null) break;
+                    if (packet == null)
+                    {
+                        unexpectedDisconnect = isConnected && currentUserId > 0;
+                        break;
+                    }
 
                     switch (packet.Type)
                     {
@@ -39,21 +45,47 @@ namespace PocketLog.Client
                                 var res = packet.GetPayload<LoginResponseDto>();
                                 if (res != null && res.Success)
                                 {
+                                    onAuthFailedUI = null;
                                     currentUserId = res.UserId;
                                     currentUsername = res.Username;
                                     currentFullName = res.FullName;
                                     totalBudgetLimit = res.MonthlyBudget;
+                                    InitializeDefaultBudgets();
 
                                     BeginInvoke(new Action(() =>
                                     {
-                                        lblHeaderUser.Text = $"👤 {currentFullName}";
-                                        btnLogoutTop.Visible = true;
+                                        UpdateHeaderUserUI(currentFullName);
                                         pnlBottomNav.Visible = true;
                                         activeTabName = "FEED";
                                         ActivateMenu(btnTabFeed, BuildFeedScreen());
                                     }));
 
                                     await SendPacketSafeAsync(TcpPacket.Create(PacketType.SYNC_REQ, currentUserId));
+                                }
+                                else
+                                {
+                                    string errMsg = res?.Message ?? "Đăng nhập thất bại!";
+                                    CloseCurrentSocket();
+                                    BeginInvoke(new Action(() => onAuthFailedUI?.Invoke(errMsg)));
+                                    return;
+                                }
+                                break;
+                            }
+
+                        case PacketType.ADD_FRIEND_RES:
+                            {
+                                var res = packet.GetPayload<AddFriendResponseDto>();
+                                if (res != null)
+                                {
+                                    BeginInvoke(new Action(() =>
+                                    {
+                                        friendDrawerFeedback = res.Message;
+                                        friendDrawerFeedbackSuccess = res.Success;
+                                        if (pnlDrawerBackdrop.Visible)
+                                        {
+                                            RenderFriendsDrawerContent("");
+                                        }
+                                    }));
                                 }
                                 break;
                             }
@@ -79,12 +111,36 @@ namespace PocketLog.Client
                     }
                 }
             }
-            catch { }
+            catch
+            {
+                unexpectedDisconnect = isConnected && currentUserId > 0;
+            }
+
+            if (unexpectedDisconnect && !IsDisposed)
+            {
+                CloseCurrentSocket();
+                BeginInvoke(new Action(() =>
+                {
+                    DisposeCachedImages();
+                    currentUserId = 0;
+                    currentFullName = "";
+                    ShowAuthScreen("Mất kết nối tới Server! Vui lòng kết nối lại.");
+                }));
+            }
         }
 
         private void ApplySyncedDataToUI(SyncDataResponseDto data)
         {
             totalBudgetLimit = data.MonthlyBudget > 0 ? data.MonthlyBudget : totalBudgetLimit;
+
+            if (data.CategoryBudgets != null)
+            {
+                foreach (var kv in data.CategoryBudgets)
+                {
+                    if (kv.Value > 0)
+                        categoryBudgets[kv.Key] = kv.Value;
+                }
+            }
 
             myFriends.Clear();
             foreach (var f in data.MyFriends)
@@ -110,7 +166,8 @@ namespace PocketLog.Client
                 });
             }
 
-            posts.Clear();
+            DisposeCachedImages();
+
             foreach (var p in data.Posts)
             {
                 bool mine = (p.AuthorId == currentUserId);
@@ -132,12 +189,12 @@ namespace PocketLog.Client
                 });
             }
 
-            taggedDebts.Clear();
             foreach (var b in data.SplitBills)
             {
                 taggedDebts.Add(new TaggedDebtItem
                 {
                     SplitId = b.SplitId,
+                    PostId = b.PostId,
                     CreditorId = b.CreditorId,
                     CreditorName = b.CreditorName,
                     DebtorId = b.DebtorId,

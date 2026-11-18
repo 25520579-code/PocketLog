@@ -1,64 +1,147 @@
+using System;
+using System.Collections.Generic;
 using System.Data.SqlClient;
+using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using PocketLog.Shared;
 
 namespace PocketLog.Server
 {
     public partial class Server
     {
-        // ====================================================================
-        // TRUY VẤN SQL: LỌC CHỈ BẠN BÈ MỚI THẤY BÀI NHAU & LẤY ĐỦ ACCOUNTS
-        // ====================================================================
+        private static string HashPassword(string password)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(password ?? "");
+            byte[] hash = SHA256.HashData(bytes);
+            return Convert.ToHexString(hash);
+        }
+
+        private static bool VerifyPassword(string inputPassword, string storedHash)
+        {
+            if (string.IsNullOrEmpty(inputPassword)) return false;
+            string hashedInput = HashPassword(inputPassword);
+            if (string.Equals(storedHash, hashedInput, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // Tương thích ngược với các tài khoản mẫu cũ lưu mật khẩu thường hoặc 'hash123'
+            if (storedHash == inputPassword) return true;
+            if (storedHash == "hash123" && inputPassword == "123") return true;
+
+            return false;
+        }
+
         private LoginResponseDto HandleLoginSql(LoginRequestDto req)
         {
-            string rawInput = req.Username.Trim();
+            if (req == null || string.IsNullOrWhiteSpace(req.Username))
+            {
+                return new LoginResponseDto { Success = false, Message = "Tên tài khoản không được để trống!" };
+            }
+            if (string.IsNullOrWhiteSpace(req.Password))
+            {
+                return new LoginResponseDto { Success = false, Message = "Vui lòng nhập mật khẩu!" };
+            }
+
+            string rawInput = req.Username.Trim().TrimStart('@');
             string cleanUsername = rawInput.ToLower().Replace(" ", "");
+            string passInput = req.Password.Trim();
 
             using (SqlConnection conn = new SqlConnection(dbConnStr))
             {
                 conn.Open();
-                // Tìm theo cả Username lẫn FullName để tránh tạo trùng tài khoản khi bấm chọn nhanh
-                string sql = @"SELECT TOP 1 UserID, Username, FullName, ISNULL(MonthlyBudget, 3500000) 
-                               FROM Users 
-                               WHERE LOWER(Username) = @u OR LOWER(Username) = @raw OR LOWER(FullName) = @raw";
-                using (SqlCommand cmd = new SqlCommand(sql, conn))
+
+                if (req.IsRegister)
                 {
-                    cmd.Parameters.AddWithValue("@u", cleanUsername);
-                    cmd.Parameters.AddWithValue("@raw", rawInput.ToLower());
-                    using (SqlDataReader r = cmd.ExecuteReader())
+                    string checkSql = @"SELECT COUNT(1) FROM Users 
+                                        WHERE LOWER(Username) = @u OR LOWER(FullName) = @raw";
+                    using (SqlCommand chkCmd = new SqlCommand(checkSql, conn))
                     {
-                        if (r.Read())
+                        chkCmd.Parameters.AddWithValue("@u", cleanUsername);
+                        chkCmd.Parameters.AddWithValue("@raw", rawInput.ToLower());
+                        int exists = Convert.ToInt32(chkCmd.ExecuteScalar());
+                        if (exists > 0)
                         {
                             return new LoginResponseDto
                             {
+                                Success = false,
+                                Message = "Tài khoản này đã tồn tại! Vui lòng chọn Đăng nhập."
+                            };
+                        }
+                    }
+
+                    int initBudget = req.InitialBudget > 0 ? req.InitialBudget : 3500000;
+                    string displayFullName = string.IsNullOrWhiteSpace(req.FullName) ? rawInput : req.FullName.Trim();
+                    string passHash = HashPassword(passInput);
+
+                    string insertSql = @"INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
+                                         VALUES (@u, @p, @fn, @mb);
+                                         SELECT SCOPE_IDENTITY();";
+                    using (SqlCommand cmdNew = new SqlCommand(insertSql, conn))
+                    {
+                        cmdNew.Parameters.AddWithValue("@u", cleanUsername);
+                        cmdNew.Parameters.AddWithValue("@p", passHash);
+                        cmdNew.Parameters.AddWithValue("@fn", displayFullName);
+                        cmdNew.Parameters.AddWithValue("@mb", initBudget);
+                        int newId = Convert.ToInt32(cmdNew.ExecuteScalar());
+
+                        return new LoginResponseDto
+                        {
+                            Success = true,
+                            UserId = newId,
+                            Username = cleanUsername,
+                            FullName = displayFullName,
+                            MonthlyBudget = initBudget,
+                            Message = "Tạo tài khoản thành công!"
+                        };
+                    }
+                }
+                else
+                {
+                    string sql = @"SELECT TOP 1 UserID, Username, FullName, ISNULL(MonthlyBudget, 3500000), PasswordHash
+                                   FROM Users 
+                                   WHERE LOWER(Username) = @u OR LOWER(Username) = @raw OR LOWER(FullName) = @raw";
+                    using (SqlCommand cmd = new SqlCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@u", cleanUsername);
+                        cmd.Parameters.AddWithValue("@raw", rawInput.ToLower());
+                        using (SqlDataReader r = cmd.ExecuteReader())
+                        {
+                            if (!r.Read())
+                            {
+                                return new LoginResponseDto
+                                {
+                                    Success = false,
+                                    Message = "Tài khoản chưa tồn tại! Hãy chuyển sang tab Tạo tài khoản mới."
+                                };
+                            }
+
+                            int uid = r.GetInt32(0);
+                            string uname = r.GetString(1);
+                            string fname = r.GetString(2).Replace(" (Bạn)", "").Trim();
+                            int budget = r.GetInt32(3);
+                            string storedHash = r.GetString(4);
+
+                            if (!VerifyPassword(passInput, storedHash))
+                            {
+                                return new LoginResponseDto
+                                {
+                                    Success = false,
+                                    Message = "Mật khẩu không chính xác! Vui lòng kiểm tra lại."
+                                };
+                            }
+
+                            return new LoginResponseDto
+                            {
                                 Success = true,
-                                UserId = r.GetInt32(0),
-                                Username = r.GetString(1),
-                                FullName = r.GetString(2),
-                                MonthlyBudget = r.GetInt32(3),
+                                UserId = uid,
+                                Username = uname,
+                                FullName = fname,
+                                MonthlyBudget = budget,
                                 Message = "OK"
                             };
                         }
                     }
-                }
-
-                string insertSql = @"INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
-                                     VALUES (@u, @p, @fn, 3500000);
-                                     SELECT SCOPE_IDENTITY();";
-                using (SqlCommand cmdNew = new SqlCommand(insertSql, conn))
-                {
-                    cmdNew.Parameters.AddWithValue("@u", cleanUsername);
-                    cmdNew.Parameters.AddWithValue("@p", string.IsNullOrEmpty(req.Password) ? "123" : req.Password);
-                    cmdNew.Parameters.AddWithValue("@fn", rawInput);
-                    int newId = Convert.ToInt32(cmdNew.ExecuteScalar());
-                    return new LoginResponseDto
-                    {
-                        Success = true,
-                        UserId = newId,
-                        Username = cleanUsername,
-                        FullName = rawInput,
-                        MonthlyBudget = 3500000,
-                        Message = "Created"
-                    };
                 }
             }
         }
@@ -72,7 +155,7 @@ namespace PocketLog.Server
             {
                 conn.Open();
 
-                // 1. Lấy hạn mức của user
+                // 1. Lấy tổng hạn mức tháng & hạn mức từng danh mục của user
                 using (SqlCommand cmdB = new SqlCommand("SELECT ISNULL(MonthlyBudget, 3500000) FROM Users WHERE UserID = @uid", conn))
                 {
                     cmdB.Parameters.AddWithValue("@uid", userId);
@@ -80,7 +163,19 @@ namespace PocketLog.Server
                     if (bObj != null && bObj != DBNull.Value) res.MonthlyBudget = Convert.ToInt32(bObj);
                 }
 
-                // 2. Lấy danh sách ID những người ĐÃ KẾT BẠN với userId
+                using (SqlCommand cmdCB = new SqlCommand("SELECT Category, BudgetLimit FROM UserCategoryBudgets WHERE UserID = @uid", conn))
+                {
+                    cmdCB.Parameters.AddWithValue("@uid", userId);
+                    using (SqlDataReader r = cmdCB.ExecuteReader())
+                    {
+                        while (r.Read())
+                        {
+                            res.CategoryBudgets[r.GetString(0)] = r.GetInt32(1);
+                        }
+                    }
+                }
+
+                // 2. Lấy danh sách ID những người đã kết bạn
                 var friendIds = new HashSet<int>();
                 string friendSql = @"SELECT RequesterID, AddresseeID FROM Friendships
                                      WHERE (RequesterID = @uid OR AddresseeID = @uid) AND Status = 'Accepted'";
@@ -98,12 +193,11 @@ namespace PocketLog.Server
                     }
                 }
 
-                // 3. Lấy TẤT CẢ các tài khoản đang có trong bảng Users của Database
-                if (friendIds.Count > 0)
+                // 3. Phân loại toàn bộ người dùng khác thành Bạn bè (MyFriends) & Gợi ý kết bạn (SuggestedUsers)
+                string allOtherUsersSql = "SELECT UserID, Username, FullName FROM Users WHERE UserID <> @uid ORDER BY FullName ASC";
+                using (SqlCommand cmdU = new SqlCommand(allOtherUsersSql, conn))
                 {
-                    string idList = string.Join(",", friendIds);
-                    string friendUsersSql = $"SELECT UserID, Username, FullName FROM Users WHERE UserID IN ({idList}) ORDER BY FullName ASC";
-                    using (SqlCommand cmdU = new SqlCommand(friendUsersSql, conn))
+                    cmdU.Parameters.AddWithValue("@uid", userId);
                     using (SqlDataReader r = cmdU.ExecuteReader())
                     {
                         while (r.Read())
@@ -112,18 +206,23 @@ namespace PocketLog.Server
                             string uname = r["Username"]?.ToString() ?? "";
                             string fname = (r["FullName"]?.ToString() ?? uname).Replace(" (Bạn)", "").Trim();
 
-                            res.MyFriends.Add(new FriendDto
+                            var dto = new FriendDto
                             {
                                 UserId = uid,
                                 Username = "@" + uname,
                                 FullName = fname,
                                 IsOnline = onlineUserIds.Contains(uid)
-                            });
+                            };
+
+                            if (friendIds.Contains(uid))
+                                res.MyFriends.Add(dto);
+                            else
+                                res.SuggestedUsers.Add(dto);
                         }
                     }
                 }
 
-                // 4. Lấy bài đăng: CHỈ LẤY BÀI CỦA BẢN THÂN HOẶC CỦA BẠN BÈ ĐÃ KẾT NỐI
+                // 4. Lấy bài đăng của bản thân hoặc bạn bè đã kết nối
                 string postSql = @"SELECT p.PostID, p.UserID, u.FullName, p.ImagePath, p.Caption, p.IsExpenseTracked, p.TotalAmount, p.CreatedAt,
                                           i.ItemName, i.Category
                                    FROM ExpensePosts p
@@ -136,8 +235,6 @@ namespace PocketLog.Server
                     while (r.Read())
                     {
                         int authorId = r.GetInt32(1);
-
-                        // CHẶN BÀI ĐĂNG CỦA NGƯỜI LẠ: Chỉ cho phép bài của mình hoặc của bạn bè trong friendIds
                         if (authorId != userId && !friendIds.Contains(authorId))
                             continue;
 
@@ -290,10 +387,13 @@ namespace PocketLog.Server
             }
         }
 
-        private void AddFriendInSql(AddFriendRequestDto req)
+        private AddFriendResponseDto AddFriendInSql(AddFriendRequestDto req)
         {
-            string kw = req.TargetKeyword.Trim().TrimStart('@');
-            if (string.IsNullOrEmpty(kw)) return;
+            string kw = (req?.TargetKeyword ?? "").Trim().TrimStart('@');
+            if (string.IsNullOrEmpty(kw))
+            {
+                return new AddFriendResponseDto { Success = false, Message = "Vui lòng nhập tên hoặc username cần kết bạn!" };
+            }
 
             using (SqlConnection conn = new SqlConnection(dbConnStr))
             {
@@ -301,29 +401,51 @@ namespace PocketLog.Server
                 int? targetId = GetUserIdByName(conn, kw);
                 if (!targetId.HasValue)
                 {
-                    string newU = @"INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
-                                    VALUES (@u, '123', @fn, 3000000);
-                                    SELECT SCOPE_IDENTITY();";
-                    using (SqlCommand cmd = new SqlCommand(newU, conn))
+                    return new AddFriendResponseDto
                     {
-                        cmd.Parameters.AddWithValue("@u", kw.ToLower().Replace(" ", ""));
-                        cmd.Parameters.AddWithValue("@fn", kw);
-                        targetId = Convert.ToInt32(cmd.ExecuteScalar());
+                        Success = false,
+                        Message = $"Không tìm thấy người dùng '{kw}' trên hệ thống!"
+                    };
+                }
+
+                if (targetId.Value == req!.RequesterId)
+                {
+                    return new AddFriendResponseDto
+                    {
+                        Success = false,
+                        Message = "Bạn không thể tự kết bạn với chính mình!"
+                    };
+                }
+
+                string existsSql = @"SELECT COUNT(1) FROM Friendships 
+                                     WHERE (RequesterID = @r AND AddresseeID = @a) OR (RequesterID = @a AND AddresseeID = @r)";
+                using (SqlCommand chk = new SqlCommand(existsSql, conn))
+                {
+                    chk.Parameters.AddWithValue("@r", req.RequesterId);
+                    chk.Parameters.AddWithValue("@a", targetId.Value);
+                    if (Convert.ToInt32(chk.ExecuteScalar()) > 0)
+                    {
+                        return new AddFriendResponseDto
+                        {
+                            Success = false,
+                            Message = $"Bạn đã kết nối bạn bè với '{kw}' trước đó rồi!"
+                        };
                     }
                 }
 
-                if (targetId.HasValue && targetId.Value != req.RequesterId)
+                string insertSql = "INSERT INTO Friendships (RequesterID, AddresseeID, Status) VALUES (@r, @a, 'Accepted')";
+                using (SqlCommand cmd = new SqlCommand(insertSql, conn))
                 {
-                    string checkSql = @"IF NOT EXISTS (SELECT 1 FROM Friendships 
-                                        WHERE (RequesterID = @r AND AddresseeID = @a) OR (RequesterID = @a AND AddresseeID = @r))
-                                        INSERT INTO Friendships (RequesterID, AddresseeID, Status) VALUES (@r, @a, 'Accepted')";
-                    using (SqlCommand cmd = new SqlCommand(checkSql, conn))
-                    {
-                        cmd.Parameters.AddWithValue("@r", req.RequesterId);
-                        cmd.Parameters.AddWithValue("@a", targetId.Value);
-                        cmd.ExecuteNonQuery();
-                    }
+                    cmd.Parameters.AddWithValue("@r", req.RequesterId);
+                    cmd.Parameters.AddWithValue("@a", targetId.Value);
+                    cmd.ExecuteNonQuery();
                 }
+
+                return new AddFriendResponseDto
+                {
+                    Success = true,
+                    Message = $"✓ Đã kết bạn thành công với '{kw}'!"
+                };
             }
         }
 
@@ -372,6 +494,29 @@ namespace PocketLog.Server
                 {
                     cmd.Parameters.AddWithValue("@b", req.NewMonthlyBudget);
                     cmd.Parameters.AddWithValue("@uid", req.UserId);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private void UpdateCategoryBudgetInSql(UpdateCategoryBudgetRequestDto req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.Category) || req.NewLimit <= 0) return;
+
+            using (SqlConnection conn = new SqlConnection(dbConnStr))
+            {
+                conn.Open();
+                string upsertSql = @"
+IF EXISTS (SELECT 1 FROM UserCategoryBudgets WHERE UserID = @uid AND Category = @cat)
+    UPDATE UserCategoryBudgets SET BudgetLimit = @lim WHERE UserID = @uid AND Category = @cat;
+ELSE
+    INSERT INTO UserCategoryBudgets (UserID, Category, BudgetLimit) VALUES (@uid, @cat, @lim);";
+
+                using (SqlCommand cmd = new SqlCommand(upsertSql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@uid", req.UserId);
+                    cmd.Parameters.AddWithValue("@cat", req.Category);
+                    cmd.Parameters.AddWithValue("@lim", req.NewLimit);
                     cmd.ExecuteNonQuery();
                 }
             }

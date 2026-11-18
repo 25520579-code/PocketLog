@@ -1,6 +1,6 @@
 ﻿-- ====================================================================
 -- DỰ ÁN: POCKETLOG - MẠNG MÁY TÍNH (NT106) - NHÓM 10
--- KỊCH BẢN TẠO CƠ SỞ DỮ LIỆU CHUẨN 7 BẢNG TRÊN (localdb)\MSSQLLocalDB
+-- KỊCH BẢN TẠO CƠ SỞ DỮ LIỆU TRÊN (localdb)\MSSQLLocalDB
 -- ====================================================================
 
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'PocketLogDB')
@@ -12,7 +12,7 @@ GO
 USE PocketLogDB;
 GO
 
--- 1. BẢNG NGƯỜI DÙNG (Users)
+IF OBJECT_ID('dbo.UserCategoryBudgets', 'U') IS NOT NULL DROP TABLE dbo.UserCategoryBudgets;
 IF OBJECT_ID('dbo.SplitBills', 'U') IS NOT NULL DROP TABLE dbo.SplitBills;
 IF OBJECT_ID('dbo.ExpenseItems', 'U') IS NOT NULL DROP TABLE dbo.ExpenseItems;
 IF OBJECT_ID('dbo.ExpensePosts', 'U') IS NOT NULL DROP TABLE dbo.ExpensePosts;
@@ -27,10 +27,9 @@ CREATE TABLE Users (
     Username NVARCHAR(50) NOT NULL UNIQUE,
     PasswordHash NVARCHAR(255) NOT NULL,
     FullName NVARCHAR(100) NOT NULL,
-    MonthlyBudget INT DEFAULT 3000000
+    MonthlyBudget INT DEFAULT 3500000
 );
 
--- 2. BẢNG MỐI QUAN HỆ BẠN BÈ (Friendships)
 CREATE TABLE Friendships (
     FriendshipID INT IDENTITY(1,1) PRIMARY KEY,
     RequesterID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
@@ -39,7 +38,6 @@ CREATE TABLE Friendships (
     CreatedAt DATETIME DEFAULT GETDATE()
 );
 
--- 3. BẢNG NHÓM CHI TIÊU (ExpenseGroups)
 CREATE TABLE ExpenseGroups (
     GroupID INT IDENTITY(1,1) PRIMARY KEY,
     CreatedBy INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
@@ -47,7 +45,6 @@ CREATE TABLE ExpenseGroups (
     CreatedAt DATETIME DEFAULT GETDATE()
 );
 
--- 4. BẢNG THÀNH VIÊN NHÓM (GroupMembers)
 CREATE TABLE GroupMembers (
     GroupID INT NOT NULL FOREIGN KEY REFERENCES ExpenseGroups(GroupID),
     UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
@@ -55,7 +52,6 @@ CREATE TABLE GroupMembers (
     PRIMARY KEY (GroupID, UserID)
 );
 
--- 5. BẢNG BÀI ĐĂNG KHOẢNH KHẮC & CHI TIÊU (ExpensePosts)
 CREATE TABLE ExpensePosts (
     PostID INT IDENTITY(1,1) PRIMARY KEY,
     UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
@@ -68,7 +64,6 @@ CREATE TABLE ExpensePosts (
     CreatedAt DATETIME DEFAULT GETDATE()
 );
 
--- 6. BẢNG MÓN ĂN / KHOẢN CHI TIẾT (ExpenseItems)
 CREATE TABLE ExpenseItems (
     ItemID INT IDENTITY(1,1) PRIMARY KEY,
     PostID INT NOT NULL FOREIGN KEY REFERENCES ExpensePosts(PostID),
@@ -79,7 +74,6 @@ CREATE TABLE ExpenseItems (
     PosY FLOAT DEFAULT 0.5
 );
 
--- 7. BẢNG CHIA TIỀN HÓA ĐƠN (SplitBills)
 CREATE TABLE SplitBills (
     SplitID INT IDENTITY(1,1) PRIMARY KEY,
     PostID INT NOT NULL FOREIGN KEY REFERENCES ExpensePosts(PostID),
@@ -91,14 +85,23 @@ CREATE TABLE SplitBills (
     PaidAt DATETIME NULL,
     CreatedAt DATETIME DEFAULT GETDATE()
 );
+
+CREATE TABLE UserCategoryBudgets (
+    UserID INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+    Category NVARCHAR(50) NOT NULL,
+    BudgetLimit INT NOT NULL,
+    PRIMARY KEY (UserID, Category)
+);
 GO
 
--- NẠP SẴN DỮ LIỆU TÀI KHOẢN MẪU CHO NHÓM (Tránh lỗi khóa ngoại khi chia tiền)
+-- Mật khẩu mặc định của 3 tài khoản mẫu là: 123 (SHA-256)
+DECLARE @DefHash NVARCHAR(255) = 'A665A45920422F9D417E4867EFDC4FB8A04A1F3FFF1FA07E998E86F7F7A27AE3';
+
 INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
 VALUES 
-    ('huyhoang', 'hash123', N'Huy Hoàng (Bạn)', 3500000),
-    ('giahuy', 'hash123', N'Gia Huy', 2500000),
-    ('minhkhoa', 'hash123', N'Minh Khoa', 2000000);
+    ('huyhoang', @DefHash, N'Huy Hoàng', 3500000),
+    ('giahuy', @DefHash, N'Gia Huy', 2500000),
+    ('minhkhoa', @DefHash, N'Minh Khoa', 2000000);
 
 INSERT INTO Friendships (RequesterID, AddresseeID, Status)
 VALUES 
