@@ -449,6 +449,49 @@ namespace PocketLog.Server
             }
         }
 
+        private AddFriendResponseDto RemoveFriendInSql(AddFriendRequestDto req)
+        {
+            string kw = (req?.TargetKeyword ?? "").Trim().TrimStart('@');
+            if (string.IsNullOrEmpty(kw))
+            {
+                return new AddFriendResponseDto { Success = false, Message = "Không xác định được bạn bè cần xóa!" };
+            }
+
+            using (SqlConnection conn = new SqlConnection(dbConnStr))
+            {
+                conn.Open();
+                int? targetId = GetUserIdByName(conn, kw);
+                if (!targetId.HasValue)
+                {
+                    return new AddFriendResponseDto { Success = false, Message = $"Không tìm thấy người dùng '{kw}'!" };
+                }
+
+                string deleteSql = @"DELETE FROM Friendships 
+                                     WHERE (RequesterID = @r AND AddresseeID = @a) OR (RequesterID = @a AND AddresseeID = @r)";
+                using (SqlCommand cmd = new SqlCommand(deleteSql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@r", req!.RequesterId);
+                    cmd.Parameters.AddWithValue("@a", targetId.Value);
+                    int affected = cmd.ExecuteNonQuery();
+
+                    if (affected > 0)
+                    {
+                        return new AddFriendResponseDto
+                        {
+                            Success = true,
+                            Message = $"Đã hủy kết bạn với '{kw}'."
+                        };
+                    }
+                }
+
+                return new AddFriendResponseDto
+                {
+                    Success = false,
+                    Message = $"Bạn và '{kw}' hiện không phải bạn bè."
+                };
+            }
+        }
+
         private void SaveProofImageToSql(UploadProofRequestDto req)
         {
             string fileName = SaveBase64ToImageFile(req.ProofImageBase64, $"proof_{req.SplitId}");

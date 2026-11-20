@@ -244,7 +244,30 @@ namespace PocketLog.Client
 
             if (isAlreadyFriend)
             {
-                row.Controls.Add(MakeBtn("Bạn bè", rowWidth - 94, 13, 84, 30, 15, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8F));
+                bool confirmRemove = false;
+                var btnRemove = MakeBtn("Xóa bạn", rowWidth - 94, 13, 84, 30, 15, clrAppBg, clrIndigo, clrBorderLight, 1, 8F);
+                btnRemove.HoverState.FillColor = clrSoftRedBg;
+                btnRemove.HoverState.ForeColor = clrRedDanger;
+                btnRemove.HoverState.BorderColor = clrRedDanger;
+                btnRemove.Click += async (s, e) =>
+                {
+                    if (!confirmRemove)
+                    {
+                        confirmRemove = true;
+                        btnRemove.Text = "Chắc xóa?";
+                        btnRemove.FillColor = clrSoftRedBg;
+                        btnRemove.ForeColor = clrRedDanger;
+                        btnRemove.BorderColor = clrRedDanger;
+                        return;
+                    }
+                    btnRemove.Enabled = false;
+                    await SendPacketSafeAsync(TcpPacket.Create(PacketType.REMOVE_FRIEND_REQ, new AddFriendRequestDto
+                    {
+                        RequesterId = currentUserId,
+                        TargetKeyword = u.Handle.TrimStart('@')
+                    }));
+                };
+                row.Controls.Add(btnRemove);
             }
             else
             {
