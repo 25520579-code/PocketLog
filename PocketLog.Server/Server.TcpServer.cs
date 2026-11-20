@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using PocketLog.Shared;
@@ -11,6 +12,9 @@ namespace PocketLog.Server
 {
     public partial class Server
     {
+        private UdpClient? udpDiscoveryServer;
+        private const int DiscoveryUdpPort = 8889;
+
         private void StartTcpServer()
         {
             if (isRunning) return;
@@ -45,6 +49,8 @@ namespace PocketLog.Server
                         }
                     }
                 });
+
+                StartUdpDiscoveryServer();
             }
             catch (Exception ex)
             {
@@ -52,10 +58,57 @@ namespace PocketLog.Server
             }
         }
 
+        private void StartUdpDiscoveryServer()
+        {
+            StopUdpDiscoveryServer();
+            try
+            {
+                udpDiscoveryServer = new UdpClient(DiscoveryUdpPort);
+                udpDiscoveryServer.EnableBroadcast = true;
+                Log($"📡 Đã mở cổng UDP {DiscoveryUdpPort} (Broadcast Discovery).");
+
+                Task.Run(async () =>
+                {
+                    while (isRunning && udpDiscoveryServer != null)
+                    {
+                        try
+                        {
+                            UdpReceiveResult result = await udpDiscoveryServer.ReceiveAsync();
+                            string msg = Encoding.UTF8.GetString(result.Buffer).Trim();
+
+                            if (msg == "POCKETLOG_DISCOVER_REQ")
+                            {
+                                string reply = $"POCKETLOG_DISCOVER_RES|8888|{Environment.MachineName}";
+                                byte[] replyBytes = Encoding.UTF8.GetBytes(reply);
+                                await udpDiscoveryServer.SendAsync(replyBytes, replyBytes.Length, result.RemoteEndPoint);
+                                Log($"📡 Đã phản hồi dò Server LAN (UDP {DiscoveryUdpPort}) cho {result.RemoteEndPoint}");
+                            }
+                        }
+                        catch
+                        {
+                            if (!isRunning) break;
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Log($"⚠ Không thể mở cổng UDP {DiscoveryUdpPort}: " + ex.Message);
+            }
+        }
+
+        private void StopUdpDiscoveryServer()
+        {
+            try { udpDiscoveryServer?.Close(); } catch { }
+            udpDiscoveryServer = null;
+        }
+
         private void StopTcpServer()
         {
             if (!isRunning) return;
             isRunning = false;
+
+            StopUdpDiscoveryServer();
 
             try { tcpListener?.Stop(); } catch { }
             tcpListener = null;

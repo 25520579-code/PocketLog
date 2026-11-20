@@ -1,6 +1,9 @@
 using System;
 using System.Drawing;
+using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Guna.UI2.WinForms;
@@ -54,7 +57,11 @@ namespace PocketLog.Client
                 UseTransparentBackground = true
             };
             cardServer.Controls.Add(MakeLabel("Máy chủ kết nối (TCP Server)", 16, 12, 9.2F, FontStyle.Bold, clrPrimaryGreen));
-            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 nếu chạy cùng máy hoặc IP LAN của Server", 16, 34, 8.2F, FontStyle.Regular, clrTextMuted, w - 32));
+            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 hoặc bấm Dò Server LAN (UDP 8889)", 16, 36, 8.1F, FontStyle.Regular, clrTextMuted, w - 32));
+
+            var btnDiscoverServer = MakeBtn("Dò Server LAN", w - 130, 9, 116, 26, 13, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.9F);
+            btnDiscoverServer.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            cardServer.Controls.Add(btnDiscoverServer);
 
             var gridServer = new BufferedTableLayout
             {
@@ -95,7 +102,6 @@ namespace PocketLog.Client
                 UseTransparentBackground = true
             };
 
-            // Thanh chuyển tab dạng Segmented Pill chuẩn Android
             Guna2Panel segTrack = new Guna2Panel
             {
                 Location = new Point(16, 16),
@@ -161,6 +167,31 @@ namespace PocketLog.Client
 
             var btnSubmitAuth = MakeBtn("Kết nối & Đăng nhập", 16, 320, w - 32, 46, 23, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9.8F);
             btnSubmitAuth.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            btnDiscoverServer.Click += async (s, e) =>
+            {
+                btnDiscoverServer.Enabled = false;
+                btnDiscoverServer.Text = "Đang dò...";
+                lblAuthStatus.Text = "Đang dò tìm Server qua UDP Broadcast (Port 8889)...";
+                lblAuthStatus.ForeColor = clrPrimaryGreen;
+
+                var found = await DiscoverServerViaUdpAsync();
+                if (found.Success)
+                {
+                    txtServerIp.Text = found.Ip;
+                    txtServerPort.Text = found.Port.ToString();
+                    lblAuthStatus.Text = $"✓ Tìm thấy Server ({found.HostName}) tại {found.Ip}:{found.Port}!";
+                    lblAuthStatus.ForeColor = clrPrimaryGreen;
+                }
+                else
+                {
+                    lblAuthStatus.Text = "Không thấy Server phản hồi UDP 8889. Kiểm tra Server/Firewall!";
+                    lblAuthStatus.ForeColor = clrRedDanger;
+                }
+
+                btnDiscoverServer.Enabled = true;
+                btnDiscoverServer.Text = "Dò Server LAN";
+            };
 
             btnModeLogin.Click += (s, e) =>
             {
@@ -251,6 +282,47 @@ namespace PocketLog.Client
 
             pnlMainContainer.Controls.Clear();
             pnlMainContainer.Controls.Add(page);
+        }
+
+        private async Task<(bool Success, string Ip, int Port, string HostName)> DiscoverServerViaUdpAsync()
+        {
+            try
+            {
+                using var udp = new UdpClient();
+                udp.EnableBroadcast = true;
+                byte[] reqBytes = Encoding.UTF8.GetBytes("POCKETLOG_DISCOVER_REQ");
+
+                try
+                {
+                    await udp.SendAsync(reqBytes, reqBytes.Length, new IPEndPoint(IPAddress.Broadcast, 8889));
+                }
+                catch { }
+
+                try
+                {
+                    await udp.SendAsync(reqBytes, reqBytes.Length, new IPEndPoint(IPAddress.Loopback, 8889));
+                }
+                catch { }
+
+                using var cts = new CancellationTokenSource(1500);
+                while (!cts.IsCancellationRequested)
+                {
+                    var recv = await udp.ReceiveAsync(cts.Token);
+                    string reply = Encoding.UTF8.GetString(recv.Buffer).Trim();
+                    if (reply.StartsWith("POCKETLOG_DISCOVER_RES|"))
+                    {
+                        string[] parts = reply.Split('|');
+                        int port = (parts.Length > 1 && int.TryParse(parts[1], out int p)) ? p : 8888;
+                        string host = parts.Length > 2 ? parts[2] : "PocketLog Server";
+                        string serverIp = recv.RemoteEndPoint.Address.ToString();
+                        return (true, serverIp, port, host);
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch { }
+
+            return (false, "", 8888, "");
         }
 
         private async Task<bool> ConnectAndAuthenticateAsync(string ip, int port, string username, string password, bool isRegister, string initBudgetStr, Label lblStatus)
