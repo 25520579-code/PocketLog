@@ -170,8 +170,6 @@ namespace PocketLog.Server
                     }
                 }
 
-                string defaultPassHash = HashPassword("123");
-
                 using (SqlConnection conn = new SqlConnection(dbConnStr))
                 {
                     conn.Open();
@@ -250,27 +248,6 @@ END";
                     using (SqlCommand cmd = new SqlCommand(schemaSql, conn))
                     {
                         cmd.ExecuteNonQuery();
-                    }
-
-                    // Chỉ khởi tạo tài khoản mẫu nếu bảng Users hoàn toàn trống
-                    string seedSql = @"
-IF NOT EXISTS (SELECT 1 FROM Users)
-BEGIN
-    INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
-    VALUES 
-        ('huyhoang', @defHash, N'Huy Hoàng', 3500000),
-        ('giahuy', @defHash, N'Gia Huy', 2500000),
-        ('minhkhoa', @defHash, N'Minh Khoa', 2000000);
-
-    INSERT INTO Friendships (RequesterID, AddresseeID, Status)
-    VALUES 
-        (1, 2, 'Accepted'),
-        (1, 3, 'Accepted');
-END";
-                    using (SqlCommand seedCmd = new SqlCommand(seedSql, conn))
-                    {
-                        seedCmd.Parameters.AddWithValue("@defHash", defaultPassHash);
-                        seedCmd.ExecuteNonQuery();
                     }
                 }
                 Log("✓ Đã kết nối CSDL PocketLogDB (đầy đủ 8 bảng, bảo toàn dữ liệu hiện có).");

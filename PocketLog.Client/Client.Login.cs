@@ -145,7 +145,7 @@ namespace PocketLog.Client
             txtInitBudget.Visible = false;
 
             string defaultHint = string.IsNullOrEmpty(initialNotice)
-                ? "Nhập tài khoản có sẵn để đăng nhập (mẫu: huyhoang / 123)."
+                ? "Nhập tài khoản đã có để đăng nhập vào hệ thống."
                 : initialNotice;
 
             Label lblAuthStatus = new Label

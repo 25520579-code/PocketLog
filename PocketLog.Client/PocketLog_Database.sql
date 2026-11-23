@@ -93,18 +93,3 @@ CREATE TABLE UserCategoryBudgets (
     PRIMARY KEY (UserID, Category)
 );
 GO
-
--- Mật khẩu mặc định của 3 tài khoản mẫu là: 123 (SHA-256)
-DECLARE @DefHash NVARCHAR(255) = 'A665A45920422F9D417E4867EFDC4FB8A04A1F3FFF1FA07E998E86F7F7A27AE3';
-
-INSERT INTO Users (Username, PasswordHash, FullName, MonthlyBudget)
-VALUES 
-    ('huyhoang', @DefHash, N'Huy Hoàng', 3500000),
-    ('giahuy', @DefHash, N'Gia Huy', 2500000),
-    ('minhkhoa', @DefHash, N'Minh Khoa', 2000000);
-
-INSERT INTO Friendships (RequesterID, AddresseeID, Status)
-VALUES 
-    (1, 2, 'Accepted'),
-    (1, 3, 'Accepted');
-GO

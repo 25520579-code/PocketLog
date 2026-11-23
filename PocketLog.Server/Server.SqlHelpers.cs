@@ -100,7 +100,10 @@ namespace PocketLog.Server
                 {
                     string sql = @"SELECT TOP 1 UserID, Username, FullName, ISNULL(MonthlyBudget, 3500000), PasswordHash
                                    FROM Users 
-                                   WHERE LOWER(Username) = @u OR LOWER(Username) = @raw OR LOWER(FullName) = @raw";
+                                   WHERE LOWER(Username) = @u OR LOWER(Username) = @raw OR LOWER(FullName) = @raw
+                                   ORDER BY CASE WHEN LOWER(Username) = @u THEN 0
+                                                 WHEN LOWER(Username) = @raw THEN 1
+                                                 ELSE 2 END, UserID";
                     using (SqlCommand cmd = new SqlCommand(sql, conn))
                     {
                         cmd.Parameters.AddWithValue("@u", cleanUsername);
