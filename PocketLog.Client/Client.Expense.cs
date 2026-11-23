@@ -518,7 +518,88 @@ namespace PocketLog.Client
             cardTotal.Controls.Add(prgTotal);
             cardTotal.Controls.Add(totalActionGrid);
             col.Controls.Add(cardTotal);
-            y += 160;
+            y += 154;
+
+            var btnExportCsv = MakeBtn("Xuất báo cáo chi tiêu (.CSV / Excel)", 0, y, w, 44, 14, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
+            btnExportCsv.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            AttachBtnIcon(btnExportCsv, UiIcon.Receipt, clrPrimaryGreen, 16);
+
+            var lblExportStatus = MakeLabel("", 4, y + 48, 8F, FontStyle.Regular, clrTextMuted, w - 8);
+            lblExportStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            btnExportCsv.Click += (s, e) =>
+            {
+                using SaveFileDialog sfd = new SaveFileDialog
+                {
+                    Title = "Lưu báo cáo chi tiêu PocketLog",
+                    Filter = "CSV (Mở bằng Excel)|*.csv",
+                    FileName = $"PocketLog_BaoCao_{DateTime.Now:yyyyMMdd_HHmm}.csv"
+                };
+
+                if (sfd.ShowDialog() != DialogResult.OK) return;
+
+                try
+                {
+                    string CsvEsc(string val)
+                    {
+                        string text = (val ?? "").Replace("\r", " ").Replace("\n", " ");
+                        return $"\"{text.Replace("\"", "\"\"")}\"";
+                    }
+
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine("BÁO CÁO CHI TIÊU CÁ NHÂN & CÔNG NỢ - POCKETLOG");
+                    sb.AppendLine($"Người dùng,{CsvEsc(currentFullName)}");
+                    sb.AppendLine($"Ngày xuất,{DateTime.Now:dd/MM/yyyy HH:mm}");
+                    sb.AppendLine($"Tổng chi tiêu cá nhân,{grandTotal}");
+                    sb.AppendLine($"Hạn mức tháng,{totalBudgetLimit}");
+                    sb.AppendLine($"Bạn đang nợ bạn bè,{totalIOwe}");
+                    sb.AppendLine($"Bạn bè đang nợ bạn,{totalOwedToMe}");
+                    sb.AppendLine();
+
+                    sb.AppendLine("1. CHI TIÊU THEO DANH MỤC");
+                    sb.AppendLine("Danh mục,Đã tiêu cá nhân (VNĐ),Hạn mức (VNĐ),Tình trạng");
+                    foreach (var cat in standardCategories)
+                    {
+                        int cSpent = CalculatePersonalSpentByCategory(cat.Key);
+                        int cLimit = categoryBudgets.ContainsKey(cat.Key) ? categoryBudgets[cat.Key] : 500000;
+                        string cState = cSpent > cLimit ? "Vượt hạn mức" : "Trong hạn mức";
+                        sb.AppendLine($"{CsvEsc(GetCategoryCleanName(cat.Key))},{cSpent},{cLimit},{CsvEsc(cState)}");
+                    }
+                    sb.AppendLine();
+
+                    sb.AppendLine("2. LỊCH SỬ BÀI ĐĂNG CHI TIÊU & CHIA TIỀN");
+                    sb.AppendLine("Thời gian,Khoản chi,Danh mục,Tổng hóa đơn (VNĐ),Vai trò / Ghi chú");
+                    foreach (var p in posts.Where(p => p.IsMine && p.HasTag))
+                    {
+                        string tagNote = (p.TaggedFriends != null && p.TaggedFriends.Count > 0)
+                            ? $"Bạn trả trước (Tag: {string.Join("; ", p.TaggedFriends)})"
+                            : "Chi tiêu cá nhân";
+                        sb.AppendLine($"{CsvEsc(p.Time)},{CsvEsc(p.NoteTop)},{CsvEsc(GetCategoryCleanName(p.Category))},{p.Amount},{CsvEsc(tagNote)}");
+                    }
+                    sb.AppendLine();
+
+                    sb.AppendLine("3. CHI TIẾT CÔNG NỢ CHIA HÓA ĐƠN");
+                    sb.AppendLine("Thời gian,Khoản chia,Chủ chi,Người nợ,Phần chia (VNĐ),Trạng thái");
+                    foreach (var d in taggedDebts)
+                    {
+                        string st = d.IsConfirmedPaid ? "Đã tất toán" : (d.IsSentProof ? "Chờ xác nhận" : "Chưa thanh toán");
+                        sb.AppendLine($"{CsvEsc(d.Time)},{CsvEsc(d.Title)},{CsvEsc(d.CreditorName)},{CsvEsc(d.DebtorName)},{d.MyShare},{CsvEsc(st)}");
+                    }
+
+                    File.WriteAllText(sfd.FileName, sb.ToString(), new System.Text.UTF8Encoding(true));
+                    lblExportStatus.Text = $"✓ Đã xuất file: {Path.GetFileName(sfd.FileName)}";
+                    lblExportStatus.ForeColor = clrPrimaryGreen;
+                }
+                catch (Exception ex)
+                {
+                    lblExportStatus.Text = "Lỗi xuất file: " + ex.Message;
+                    lblExportStatus.ForeColor = clrRedDanger;
+                }
+            };
+
+            col.Controls.Add(btnExportCsv);
+            col.Controls.Add(lblExportStatus);
+            y += 80;
 
             col.Height = y;
             return page;

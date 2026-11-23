@@ -116,6 +116,7 @@ namespace PocketLog.Client
                 unexpectedDisconnect = isConnected && currentUserId > 0;
             }
 
+            bool authInterrupted = isConnected && currentUserId == 0;
             if (unexpectedDisconnect && !IsDisposed)
             {
                 CloseCurrentSocket();
@@ -126,6 +127,11 @@ namespace PocketLog.Client
                     currentFullName = "";
                     ShowAuthScreen("Mất kết nối tới Server! Vui lòng kết nối lại.");
                 }));
+            }
+            else if (authInterrupted && !IsDisposed)
+            {
+                CloseCurrentSocket();
+                BeginInvoke(new Action(() => onAuthFailedUI?.Invoke("Server đã ngắt kết nối trong lúc đăng nhập!")));
             }
         }
 

@@ -85,6 +85,20 @@ namespace PocketLog.Server
                         break;
                     }
 
+                case PacketType.REMOVE_FRIEND_REQ:
+                    {
+                        var req = packet.GetPayload<AddFriendRequestDto>();
+                        var res = RemoveFriendInSql(req);
+                        await SendToClientSafeAsync(client, TcpPacket.Create(PacketType.ADD_FRIEND_RES, res));
+
+                        if (res.Success)
+                        {
+                            Log($"💔 User#{req.RequesterId} đã hủy kết bạn với '{req.TargetKeyword}'");
+                            await BroadcastRefreshToAllClientsAsync();
+                        }
+                        break;
+                    }
+
                 case PacketType.UPLOAD_PROOF_REQ:
                     {
                         var req = packet.GetPayload<UploadProofRequestDto>();

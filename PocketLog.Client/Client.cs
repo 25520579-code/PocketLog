@@ -990,7 +990,12 @@ namespace PocketLog.Client
 
             screenContent.Dock = DockStyle.Fill;
             pnlMainContainer.SuspendLayout();
+            var oldControls = pnlMainContainer.Controls.Cast<Control>().ToList();
             pnlMainContainer.Controls.Clear();
+            foreach (var oldCtrl in oldControls)
+            {
+                try { oldCtrl.Dispose(); } catch { }
+            }
             pnlMainContainer.Controls.Add(screenContent);
             pnlMainContainer.ResumeLayout(true);
         }
