@@ -43,7 +43,8 @@ namespace PocketLog.Server
         private void BuildServerDashboardUI()
         {
             this.Text = "PocketLog TCP Server & SQL Host (Port 8888)";
-            this.Size = new Size(680, 480);
+            this.Size = new Size(860, 560);
+            this.MinimumSize = new Size(760, 480);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(24, 28, 32);
             this.ForeColor = Color.White;
@@ -67,19 +68,20 @@ namespace PocketLog.Server
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(241, 196, 15),
                 AutoSize = true,
-                Location = new Point(20, 44)
+                Location = new Point(20, 58)
             };
 
             btnToggleServer = new Button
             {
                 Text = "⏹ Dừng Server",
-                Location = new Point(490, 18),
-                Size = new Size(155, 38),
+                Location = new Point(this.ClientSize.Width - 170, 14),
+                Size = new Size(150, 36),
                 BackColor = Color.FromArgb(192, 57, 43),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
             };
             btnToggleServer.Click += (s, e) =>
             {
@@ -91,37 +93,39 @@ namespace PocketLog.Server
             {
                 Text = "Các máy Client đang kết nối:",
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                Location = new Point(20, 78),
+                Location = new Point(20, 96),
                 AutoSize = true
             };
 
             lstClients = new ListBox
             {
-                Location = new Point(20, 102),
-                Size = new Size(200, 320),
+                Location = new Point(20, 122),
+                Size = new Size(240, this.ClientSize.Height - 142),
                 BackColor = Color.FromArgb(34, 40, 46),
                 ForeColor = Color.LightGreen,
                 Font = new Font("Consolas", 9.5F),
-                BorderStyle = BorderStyle.FixedSingle
+                BorderStyle = BorderStyle.FixedSingle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left
             };
 
             Label lblLogTitle = new Label
             {
                 Text = "Nhật ký gói tin TCP & Truy vấn SQL Server:",
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                Location = new Point(236, 78),
+                Location = new Point(280, 96),
                 AutoSize = true
             };
 
             rtbLog = new RichTextBox
             {
-                Location = new Point(236, 102),
-                Size = new Size(410, 320),
+                Location = new Point(280, 122),
+                Size = new Size(this.ClientSize.Width - 300, this.ClientSize.Height - 142),
                 BackColor = Color.FromArgb(16, 20, 24),
                 ForeColor = Color.FromArgb(210, 220, 225),
                 Font = new Font("Consolas", 9F),
                 ReadOnly = true,
-                BorderStyle = BorderStyle.FixedSingle
+                BorderStyle = BorderStyle.FixedSingle,
+                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
             };
 
             this.Controls.AddRange(new Control[] { lblStatus, lblIpInfo, btnToggleServer, lblOnline, lstClients, lblLogTitle, rtbLog });

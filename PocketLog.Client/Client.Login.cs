@@ -31,55 +31,55 @@ namespace PocketLog.Client
             Guna2Panel pnlHero = new Guna2Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 96),
+                Size = new Size(w, 106),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 22,
+                BorderRadius = 24,
                 FillColor = clrPrimaryGreen,
                 UseTransparentBackground = true
             };
-            pnlHero.Controls.Add(MakeSoftIconBadge(UiIcon.Camera, 18, 22, 46, 15, Color.FromArgb(88, 152, 250), Color.White));
-            var lblHeroTitle = MakeLabel("PocketLog Locket & Bill", 76, 22, 13F, FontStyle.Bold, Color.White);
-            lblHeroTitle.Font = FontBold(13F);
+            pnlHero.Controls.Add(MakeSoftIconBadge(UiIcon.Camera, 20, 24, 52, 16, Color.FromArgb(88, 152, 250), Color.White));
+            var lblHeroTitle = MakeLabel("PocketLog - Nhật ký & Chi tiêu", 84, 24, 14F, FontStyle.Bold, Color.White);
+            lblHeroTitle.Font = FontBold(14F);
             pnlHero.Controls.Add(lblHeroTitle);
-            pnlHero.Controls.Add(MakeLabel("Chia sẻ khoảnh khắc & chia tiền nhóm tức thì", 76, 52, 8.8F, FontStyle.Regular, clrSoftGreenBg, w - 92));
+            pnlHero.Controls.Add(MakeLabel("Chia sẻ khoảnh khắc & Quản lý chi tiêu", 84, 58, 9.2F, FontStyle.Regular, clrSoftGreenBg, w - 100));
             col.Controls.Add(pnlHero);
-            y += 110;
+            y += 122;
 
             Guna2Panel cardServer = new Guna2Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 108),
+                Size = new Size(w, 136),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 20,
+                BorderRadius = 22,
                 FillColor = clrCardBg,
                 BorderColor = clrBorderLight,
                 BorderThickness = 1,
                 UseTransparentBackground = true
             };
-            cardServer.Controls.Add(MakeLabel("Máy chủ kết nối (TCP Server)", 16, 12, 9.2F, FontStyle.Bold, clrPrimaryGreen));
-            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 hoặc bấm Dò Server LAN (UDP 8889)", 16, 36, 8.1F, FontStyle.Regular, clrTextMuted, w - 32));
+            cardServer.Controls.Add(MakeLabel("Máy chủ kết nối (TCP Server)", 18, 14, 10F, FontStyle.Bold, clrPrimaryGreen));
+            cardServer.Controls.Add(MakeLabel("Nhập 127.0.0.1 hoặc bấm Dò Server LAN (UDP 8889)", 18, 42, 8.8F, FontStyle.Regular, clrTextMuted, w - 36));
 
-            var btnDiscoverServer = MakeBtn("Dò Server LAN", w - 130, 9, 116, 26, 13, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 7.9F);
+            var btnDiscoverServer = MakeBtn("Dò Server LAN", w - 146, 12, 130, 30, 15, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.5F);
             btnDiscoverServer.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             cardServer.Controls.Add(btnDiscoverServer);
 
             var gridServer = new BufferedTableLayout
             {
-                Location = new Point(14, 58),
-                Size = new Size(w - 28, 38),
+                Location = new Point(16, 74),
+                Size = new Size(w - 32, 46),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ColumnCount = 2,
                 RowCount = 1
             };
-            gridServer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 72F));
-            gridServer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28F));
+            gridServer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 68F));
+            gridServer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32F));
             gridServer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var txtServerIp = MakeTextBox(currentServerIp, "IP Server (127.0.0.1)", 0, 0, 100, 36, clrCardBg, true);
+            var txtServerIp = MakeTextBox("", "Thêm địa chỉ IP", 0, 0, 100, 42, clrCardBg, true);
             txtServerIp.Dock = DockStyle.Fill;
             txtServerIp.Margin = new Padding(2, 0, 6, 0);
 
-            var txtServerPort = MakeTextBox(currentServerPort.ToString(), "Port", 0, 0, 80, 36, clrCardBg, true);
+            var txtServerPort = MakeTextBox("", "Thêm Port", 0, 0, 80, 42, clrCardBg, true);
             txtServerPort.Dock = DockStyle.Fill;
             txtServerPort.Margin = new Padding(4, 0, 2, 0);
             txtServerPort.ForeColor = clrIndigo;
@@ -88,14 +88,14 @@ namespace PocketLog.Client
             gridServer.Controls.Add(txtServerPort, 1, 0);
             cardServer.Controls.Add(gridServer);
             col.Controls.Add(cardServer);
-            y += 122;
+            y += 152;
 
             Guna2Panel cardAuth = new Guna2Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 384),
+                Size = new Size(w, 440),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 22,
+                BorderRadius = 24,
                 FillColor = clrCardBg,
                 BorderColor = clrBorderLight,
                 BorderThickness = 1,
@@ -104,17 +104,17 @@ namespace PocketLog.Client
 
             Guna2Panel segTrack = new Guna2Panel
             {
-                Location = new Point(16, 16),
-                Size = new Size(w - 32, 42),
+                Location = new Point(18, 18),
+                Size = new Size(w - 36, 46),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 14,
+                BorderRadius = 15,
                 FillColor = clrAppBg,
                 UseTransparentBackground = true
             };
             var gridSeg = new BufferedTableLayout
             {
                 Location = new Point(3, 3),
-                Size = new Size(segTrack.Width - 6, 36),
+                Size = new Size(segTrack.Width - 6, 40),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ColumnCount = 2,
                 RowCount = 1
@@ -123,11 +123,11 @@ namespace PocketLog.Client
             gridSeg.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
             gridSeg.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var btnModeLogin = MakeBtn("Đăng nhập", 0, 0, 100, 34, 11, clrPrimaryGreen, Color.White, Color.Transparent, 0, 9F);
+            var btnModeLogin = MakeBtn("Đăng nhập", 0, 0, 100, 38, 12, clrPrimaryGreen, Color.White, Color.Transparent, 0, 9.8F);
             btnModeLogin.Dock = DockStyle.Fill;
             btnModeLogin.Margin = new Padding(1);
 
-            var btnModeReg = MakeBtn("Tạo tài khoản", 0, 0, 100, 34, 11, Color.Transparent, clrIndigo, Color.Transparent, 0, 9F);
+            var btnModeReg = MakeBtn("Tạo tài khoản", 0, 0, 100, 38, 12, Color.Transparent, clrIndigo, Color.Transparent, 0, 9.8F);
             btnModeReg.Dock = DockStyle.Fill;
             btnModeReg.Margin = new Padding(1);
 
@@ -135,17 +135,17 @@ namespace PocketLog.Client
             gridSeg.Controls.Add(btnModeReg, 1, 0);
             segTrack.Controls.Add(gridSeg);
 
-            Label lblUserTitle = MakeLabel("Tên tài khoản hoặc họ tên hiển thị", 16, 70, 8.8F, FontStyle.Bold, clrTextMain);
-            var txtUsername = MakeTextBox("", "Nhập tên tài khoản...", 16, 94, w - 32, 40, clrCardBg);
+            Label lblUserTitle = MakeLabel("Tên tài khoản hoặc họ tên hiển thị", 18, 78, 9.8F, FontStyle.Bold, clrTextMain);
+            var txtUsername = MakeTextBox("", "Nhập tên tài khoản...", 18, 106, w - 36, 44, clrCardBg);
             txtUsername.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            Label lblPassTitle = MakeLabel("Mật khẩu", 16, 144, 8.8F, FontStyle.Bold, clrTextMain);
-            var txtPassword = MakeTextBox("", "Nhập mật khẩu...", 16, 168, w - 32, 40, clrCardBg);
+            Label lblPassTitle = MakeLabel("Mật khẩu", 18, 162, 9.8F, FontStyle.Bold, clrTextMain);
+            var txtPassword = MakeTextBox("", "Nhập mật khẩu...", 18, 190, w - 36, 44, clrCardBg);
             txtPassword.PasswordChar = '●';
             txtPassword.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ)", 16, 216, 8.6F, FontStyle.Bold, clrIndigo);
-            var txtInitBudget = MakeTextBox("3500000", "Ví dụ: 3500000", 16, 238, w - 32, 38, clrCardBg, true);
+            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ)", 18, 246, 9.5F, FontStyle.Bold, clrIndigo);
+            var txtInitBudget = MakeTextBox("3500000", "Ví dụ: 3500000", 18, 272, w - 36, 42, clrCardBg, true);
             txtInitBudget.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lblInitBudget.Visible = false;
             txtInitBudget.Visible = false;
@@ -157,15 +157,15 @@ namespace PocketLog.Client
             Label lblAuthStatus = new Label
             {
                 Text = defaultHint,
-                Location = new Point(16, 222),
-                Size = new Size(w - 32, 38),
+                Location = new Point(18, 248),
+                Size = new Size(w - 36, 40),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                Font = FontRegular(8.4F),
+                Font = FontRegular(9F),
                 ForeColor = string.IsNullOrEmpty(initialNotice) ? clrTextMuted : clrRedDanger,
                 BackColor = Color.Transparent
             };
 
-            var btnSubmitAuth = MakeBtn("Kết nối & Đăng nhập", 16, 320, w - 32, 46, 23, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9.8F);
+            var btnSubmitAuth = MakeBtn("Đăng nhập", 18, 362, w - 36, 52, 26, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 10.5F);
             btnSubmitAuth.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             btnDiscoverServer.Click += async (s, e) =>
@@ -204,11 +204,11 @@ namespace PocketLog.Client
 
                 lblInitBudget.Visible = false;
                 txtInitBudget.Visible = false;
-                lblAuthStatus.Location = new Point(16, 222);
+                lblAuthStatus.Location = new Point(18, 248);
                 lblAuthStatus.Text = "Nhập tài khoản đã có để đăng nhập vào hệ thống.";
                 lblAuthStatus.ForeColor = clrTextMuted;
                 txtUsername.PlaceholderText = "Nhập tên tài khoản...";
-                btnSubmitAuth.Text = "Kết nối & Đăng nhập";
+                btnSubmitAuth.Text = "Đăng nhập";
             };
 
             btnModeReg.Click += (s, e) =>
@@ -222,16 +222,16 @@ namespace PocketLog.Client
 
                 lblInitBudget.Visible = true;
                 txtInitBudget.Visible = true;
-                lblAuthStatus.Location = new Point(16, 280);
+                lblAuthStatus.Location = new Point(18, 318);
                 lblAuthStatus.Text = "Điền tên hiển thị, mật khẩu và hạn mức chi tiêu tháng.";
                 lblAuthStatus.ForeColor = clrTextMuted;
                 txtUsername.PlaceholderText = "Nhập tên hiển thị / tài khoản mới...";
-                btnSubmitAuth.Text = "Tạo tài khoản & Kết nối";
+                btnSubmitAuth.Text = "Tạo tài khoản";
             };
 
             btnSubmitAuth.Click += async (s, e) =>
             {
-                string ip = txtServerIp.Text.Trim();
+                string ip = string.IsNullOrWhiteSpace(txtServerIp.Text) ? "127.0.0.1" : txtServerIp.Text.Trim();
                 int.TryParse(txtServerPort.Text.Trim(), out int port);
                 if (port <= 0) port = 8888;
                 string user = txtUsername.Text.Trim();
@@ -278,7 +278,7 @@ namespace PocketLog.Client
             });
 
             col.Controls.Add(cardAuth);
-            col.Height = y + 404;
+            col.Height = y + 460;
 
             pnlMainContainer.Controls.Clear();
             pnlMainContainer.Controls.Add(page);

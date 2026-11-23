@@ -34,7 +34,7 @@ namespace PocketLog.Server
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
+            ClientSize = new Size(860, 560);
             Name = "Server";
             Text = "Server";
             ResumeLayout(false);

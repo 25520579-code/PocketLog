@@ -153,8 +153,8 @@ namespace PocketLog.Client
         private int selectedSplitId = 0;
         private string activeTabName = "AUTH";
 
-        protected const int DefaultColWidth = 392;
-        protected const int MaxColWidth = 560;
+        protected const int DefaultColWidth = 560;
+        protected const int MaxColWidth = 760;
 
         public Client()
         {
@@ -192,7 +192,7 @@ namespace PocketLog.Client
 
         protected string GetCategoryCleanName(string key)
         {
-            if (string.IsNullOrEmpty(key)) return "Khoảnh khắc Locket";
+            if (string.IsNullOrEmpty(key)) return "Khoảnh khắc Pocket";
             if (key.Contains("Đồ ăn")) return "Đồ ăn & Thức uống";
             if (key.Contains("Xăng")) return "Xăng cộ";
             if (key.Contains("Quần áo")) return "Quần áo";
@@ -297,8 +297,8 @@ namespace PocketLog.Client
                 int availW = scrollRoot.ClientSize.Width;
                 if (availW <= 0) return;
 
-                int sidePad = availW < 450 ? 12 : 20;
-                int targetW = Math.Clamp(availW - sidePad * 2, 340, MaxColWidth);
+                int sidePad = 16;
+                int targetW = Math.Clamp(availW - sidePad * 2, 480, MaxColWidth);
                 int targetX = Math.Max(sidePad, (availW - targetW) / 2);
                 int currentScrollY = scrollRoot.AutoScrollPosition.Y;
 
@@ -719,8 +719,8 @@ namespace PocketLog.Client
         {
             this.Controls.Clear();
             this.FormBorderStyle = FormBorderStyle.None;
-            this.Size = new Size(476, 830);
-            this.MinimumSize = new Size(426, 660);
+            this.Size = new Size(620, 1050);
+            this.MinimumSize = new Size(540, 780);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = clrBorderLight;
             this.Padding = new Padding(1);
@@ -728,7 +728,7 @@ namespace PocketLog.Client
             borderlessForm = new Guna2BorderlessForm
             {
                 ContainerControl = this,
-                BorderRadius = 22,
+                BorderRadius = 28,
                 ResizeForm = true,
                 HasFormShadow = true
             };
@@ -758,9 +758,9 @@ namespace PocketLog.Client
             // Chip tài khoản mềm mại thay cho ký tự 👤 bị cắt góc
             pnlHeaderUserChip = new Guna2Panel
             {
-                Location = new Point(150, 13),
-                Size = new Size(124, 30),
-                BorderRadius = 15,
+                Location = new Point(150, 12),
+                Size = new Size(124, 32),
+                BorderRadius = 16,
                 FillColor = clrSoftGreenBg,
                 Visible = false,
                 BackColor = Color.Transparent,
@@ -769,7 +769,7 @@ namespace PocketLog.Client
             avtHeaderUser = new Guna2CircleButton
             {
                 Text = "U",
-                Size = new Size(22, 22),
+                Size = new Size(24, 24),
                 Location = new Point(4, 4),
                 FillColor = clrPrimaryGreen,
                 ForeColor = Color.White,
@@ -781,7 +781,7 @@ namespace PocketLog.Client
             lblHeaderUser = new Label
             {
                 Text = "",
-                Location = new Point(30, 3),
+                Location = new Point(32, 4),
                 Size = new Size(88, 24),
                 Font = FontMedium(8.5F),
                 ForeColor = clrPrimaryGreen,
@@ -793,7 +793,7 @@ namespace PocketLog.Client
             pnlHeaderUserChip.Controls.Add(lblHeaderUser);
             pnlHeader.Controls.Add(pnlHeaderUserChip);
 
-            btnLogoutTop = MakeBtn("Đăng xuất", 268, 13, 84, 30, 15, clrAppBg, clrIndigo, Color.Transparent, 0, 8.2F);
+            btnLogoutTop = MakeBtn("Đăng xuất", 268, 12, 114, 32, 16, clrAppBg, clrIndigo, Color.Transparent, 0, 8.5F);
             btnLogoutTop.HoverState.FillColor = clrSoftRedBg;
             btnLogoutTop.HoverState.ForeColor = clrRedDanger;
             btnLogoutTop.Visible = false;
@@ -844,16 +844,16 @@ namespace PocketLog.Client
             pnlBottomNav = new Guna2Panel
             {
                 Dock = DockStyle.Bottom,
-                Height = 68,
+                Height = 72,
                 FillColor = clrCardBg,
                 Visible = false,
                 UseTransparentBackground = true
             };
             pnlBottomNav.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = clrBorderLight });
 
-            btnTabFeed = MakeBtn("Bảng tin", 14, 12, 114, 44, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9F);
-            btnTabCamera = MakeBtn("Chụp ảnh", 136, 12, 114, 44, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9F);
-            btnTabExpense = MakeBtn("Chi tiêu", 258, 12, 114, 44, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9F);
+            btnTabFeed = MakeBtn("Bảng tin", 14, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.5F);
+            btnTabCamera = MakeBtn("Chụp ảnh", 136, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.5F);
+            btnTabExpense = MakeBtn("Chi tiêu", 258, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.5F);
 
             btnTabFeed.Click += (s, e) => { activeTabName = "FEED"; ActivateMenu(btnTabFeed, BuildFeedScreen()); };
             btnTabCamera.Click += (s, e) => { activeTabName = "CAMERA"; ActivateMenu(btnTabCamera, BuildCameraScreen()); };
@@ -885,7 +885,8 @@ namespace PocketLog.Client
             btnWinClose.Location = new Point(w - 42, 13);
             btnWinMax.Location = new Point(w - 78, 13);
             btnWinMin.Location = new Point(w - 114, 13);
-            btnLogoutTop.Location = new Point(w - 206, 13);
+            btnLogoutTop.Size = new Size(114, 32);
+            btnLogoutTop.Location = new Point(w - 238, 12);
 
             int minLeft = 144;
             int availForChip = btnLogoutTop.Left - minLeft - 8;
@@ -893,8 +894,8 @@ namespace PocketLog.Client
             {
                 int desiredTextW = TextRenderer.MeasureText(lblHeaderUser.Text, lblHeaderUser.Font).Width + 40;
                 int chipW = Math.Clamp(desiredTextW, 76, Math.Min(168, availForChip));
-                pnlHeaderUserChip.Location = new Point(btnLogoutTop.Left - chipW - 6, 13);
-                pnlHeaderUserChip.Width = chipW;
+                pnlHeaderUserChip.Location = new Point(btnLogoutTop.Left - chipW - 8, 12);
+                pnlHeaderUserChip.Size = new Size(chipW, 32);
                 lblHeaderUser.Width = Math.Max(36, chipW - 34);
             }
         }
@@ -905,11 +906,11 @@ namespace PocketLog.Client
             int totalW = pnlBottomNav.ClientSize.Width;
             int totalH = pnlBottomNav.ClientSize.Height;
 
-            int navW = Math.Min(Math.Max(280, totalW - 28), MaxColWidth);
-            int startX = Math.Max(14, (totalW - navW) / 2);
+            int navW = Math.Clamp(totalW - 24, 340, Math.Min(600, MaxColWidth));
+            int startX = Math.Max(12, (totalW - navW) / 2);
             int gap = 10;
             int tabW = (navW - gap * 2) / 3;
-            int btnH = 44;
+            int btnH = 48;
             int topY = (totalH - btnH) / 2;
 
             btnTabFeed.SetBounds(startX, topY, tabW, btnH);
