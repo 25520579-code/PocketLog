@@ -19,29 +19,29 @@ namespace PocketLog.Client
             Panel topBar = new Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 36),
+                Size = new Size(w, 40),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent
             };
 
-            var lblTitle = MakeLabel("Bảng tin", 2, 4, 12F, FontStyle.Bold, clrTextMain);
-            lblTitle.Font = FontBold(12F);
+            var lblTitle = MakeLabel("Bảng tin", 2, 4, 13.5F, FontStyle.Bold, clrTextMain);
+            lblTitle.Font = FontBold(13.5F);
             topBar.Controls.Add(lblTitle);
 
-            var btnFriendsTop = MakeBtn($"Bạn bè ({myFriends.Count})", w - 122, 2, 122, 32, 16, clrCardBg, clrIndigo, clrBorderLight, 1, 8.3F);
+            var btnFriendsTop = MakeBtn($"Bạn bè ({myFriends.Count})", w - 132, 2, 132, 36, 18, clrCardBg, clrIndigo, clrBorderLight, 1, 8.8F);
             btnFriendsTop.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            AttachBtnIcon(btnFriendsTop, UiIcon.Users, clrIndigo, 15);
+            AttachBtnIcon(btnFriendsTop, UiIcon.Users, clrIndigo, 16);
             btnFriendsTop.Click += (s, e) => OpenFriendsDrawer();
 
-            var btnGallery = MakeBtn("Kho ảnh", w - 230, 2, 102, 32, 16, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.3F);
+            var btnGallery = MakeBtn("Kho ảnh", w - 248, 2, 110, 36, 18, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
             btnGallery.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            AttachBtnIcon(btnGallery, UiIcon.Photo, clrPrimaryGreen, 15);
+            AttachBtnIcon(btnGallery, UiIcon.Photo, clrPrimaryGreen, 16);
             btnGallery.Click += (s, e) => OpenMyGalleryScreen();
 
             topBar.Controls.Add(btnGallery);
             topBar.Controls.Add(btnFriendsTop);
             col.Controls.Add(topBar);
-            y += 46;
+            y += 50;
 
             LocketPost latestMine = posts.FirstOrDefault(p => p.IsMine);
             if (latestMine != null)
@@ -56,23 +56,23 @@ namespace PocketLog.Client
                 Guna2Panel emptyMine = new Guna2Panel
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 110),
+                    Size = new Size(w, 120),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    BorderRadius = 20,
+                    BorderRadius = 22,
                     FillColor = clrCardBg,
                     BorderColor = clrSoftGreenBorder,
                     BorderThickness = 1,
                     UseTransparentBackground = true,
                     Cursor = Cursors.Hand
                 };
-                var camBadge = MakeSoftIconBadge(UiIcon.Camera, (w - 38) / 2, 12, 38, 13, clrSoftGreenBg, clrPrimaryGreen);
+                var camBadge = MakeSoftIconBadge(UiIcon.Camera, (w - 42) / 2, 14, 42, 14, clrSoftGreenBg, clrPrimaryGreen);
                 var lblEmpty1 = new Label
                 {
                     Text = "Bạn chưa đăng khoảnh khắc nào",
-                    Location = new Point(12, 56),
-                    Size = new Size(w - 24, 22),
+                    Location = new Point(12, 60),
+                    Size = new Size(w - 24, 24),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    Font = FontMedium(9.5F),
+                    Font = FontMedium(10.2F),
                     ForeColor = clrPrimaryGreen,
                     TextAlign = ContentAlignment.MiddleCenter,
                     BackColor = Color.Transparent,
@@ -81,10 +81,10 @@ namespace PocketLog.Client
                 var lblEmpty2 = new Label
                 {
                     Text = "Chạm vào đây để mở Chụp ảnh và chia sẻ ngay",
-                    Location = new Point(12, 78),
-                    Size = new Size(w - 24, 20),
+                    Location = new Point(12, 86),
+                    Size = new Size(w - 24, 22),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    Font = FontRegular(8.3F),
+                    Font = FontRegular(8.8F),
                     ForeColor = clrTextMuted,
                     TextAlign = ContentAlignment.MiddleCenter,
                     BackColor = Color.Transparent,
@@ -99,29 +99,29 @@ namespace PocketLog.Client
 
                 emptyMine.Controls.AddRange(new Control[] { camBadge, lblEmpty1, lblEmpty2 });
                 col.Controls.Add(emptyMine);
-                y += 124;
+                y += 134;
             }
 
             // Tiêu đề phân tách bạn bè nhẹ nhàng kiểu Android Feed
             Panel secHeader = new Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 30),
+                Size = new Size(w, 32),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent
             };
-            var lblSec = MakeLabel("Khoảnh khắc từ bạn bè", 4, 5, 9.2F, FontStyle.Bold, clrIndigo);
+            var lblSec = MakeLabel("Khoảnh khắc từ bạn bè", 4, 5, 10F, FontStyle.Bold, clrIndigo);
             var lineSec = new Panel
             {
-                Location = new Point(162, 15),
-                Size = new Size(w - 166, 1),
+                Location = new Point(176, 16),
+                Size = new Size(w - 180, 1),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = clrBorderLight
             };
             secHeader.Controls.Add(lblSec);
             secHeader.Controls.Add(lineSec);
             col.Controls.Add(secHeader);
-            y += 36;
+            y += 38;
 
             var friendPosts = posts.Where(p => !p.IsMine).ToList();
             if (friendPosts.Count == 0)
@@ -129,23 +129,23 @@ namespace PocketLog.Client
                 Guna2Panel noFriendPostBox = new Guna2Panel
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 104),
+                    Size = new Size(w, 116),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    BorderRadius = 20,
+                    BorderRadius = 22,
                     FillColor = clrCardBg,
                     BorderColor = clrBorderLight,
                     BorderThickness = 1,
                     UseTransparentBackground = true,
                     Cursor = Cursors.Hand
                 };
-                var usrBadge = MakeSoftIconBadge(UiIcon.Users, (w - 36) / 2, 12, 36, 12, clrAppBg, clrIndigo);
+                var usrBadge = MakeSoftIconBadge(UiIcon.Users, (w - 40) / 2, 14, 40, 14, clrAppBg, clrIndigo);
                 var lblF1 = new Label
                 {
                     Text = "Chưa có bài đăng nào từ bạn bè",
-                    Location = new Point(12, 54),
-                    Size = new Size(w - 24, 22),
+                    Location = new Point(12, 58),
+                    Size = new Size(w - 24, 24),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    Font = FontMedium(9.2F),
+                    Font = FontMedium(10F),
                     ForeColor = clrTextMain,
                     TextAlign = ContentAlignment.MiddleCenter,
                     BackColor = Color.Transparent,
@@ -154,10 +154,10 @@ namespace PocketLog.Client
                 var lblF2 = new Label
                 {
                     Text = "Chạm vào đây để kết nối thêm bạn bè mới",
-                    Location = new Point(12, 76),
-                    Size = new Size(w - 24, 20),
+                    Location = new Point(12, 84),
+                    Size = new Size(w - 24, 22),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    Font = FontRegular(8.2F),
+                    Font = FontRegular(8.6F),
                     ForeColor = clrTextMuted,
                     TextAlign = ContentAlignment.MiddleCenter,
                     BackColor = Color.Transparent,
@@ -172,7 +172,7 @@ namespace PocketLog.Client
 
                 noFriendPostBox.Controls.AddRange(new Control[] { usrBadge, lblF1, lblF2 });
                 col.Controls.Add(noFriendPostBox);
-                y += 118;
+                y += 130;
             }
             else
             {
@@ -193,7 +193,7 @@ namespace PocketLog.Client
         {
             Guna2Panel card = new Guna2Panel
             {
-                Size = new Size(cardWidth, 384),
+                Size = new Size(cardWidth, 470),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 24,
                 FillColor = clrCardBg,
@@ -206,11 +206,11 @@ namespace PocketLog.Client
             Guna2CircleButton avatar = new Guna2CircleButton
             {
                 Text = string.IsNullOrEmpty(post.Author) ? "U" : post.Author.Substring(0, 1).ToUpper(),
-                Size = new Size(38, 38),
+                Size = new Size(42, 42),
                 Location = new Point(14, 12),
                 FillColor = isMyTopCard ? clrPrimaryGreen : Color.FromArgb(100, 116, 139),
                 ForeColor = Color.White,
-                Font = FontMedium(9.5F),
+                Font = FontMedium(10.5F),
                 UseTransparentBackground = true,
                 BackColor = Color.Transparent,
                 Enabled = false
@@ -223,12 +223,12 @@ namespace PocketLog.Client
             string cleanCat = GetCategoryShortClean(post.Category);
             string topText = post.HasTag
                 ? $"{cleanCat}  •  {post.NoteTop} ({tagFriendsStr})"
-                : "Ảnh khoảnh khắc Locket";
+                : "Ảnh khoảnh khắc Pocket";
 
-            var lblAuthor = MakeLabel($"{post.Author}   •   {post.Time}", 60, 10, 9.2F, FontStyle.Bold, clrTextMain, cardWidth - 76);
+            var lblAuthor = MakeLabel($"{post.Author}   •   {post.Time}", 64, 10, 10F, FontStyle.Bold, clrTextMain, cardWidth - 80);
             lblAuthor.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            var lblSub = MakeLabel(topText, 60, 31, 8.2F, post.HasTag ? FontStyle.Bold : FontStyle.Regular, post.HasTag ? clrPrimaryGreen : clrTextMuted, cardWidth - 76);
+            var lblSub = MakeLabel(topText, 64, 33, 8.8F, post.HasTag ? FontStyle.Bold : FontStyle.Regular, post.HasTag ? clrPrimaryGreen : clrTextMuted, cardWidth - 80);
             lblSub.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             card.Controls.Add(avatar);
@@ -236,10 +236,10 @@ namespace PocketLog.Client
             card.Controls.Add(lblSub);
 
             int frameW = cardWidth - 24;
-            int frameH = 310;
+            int frameH = 390;
             Guna2Panel photoFrame = new Guna2Panel
             {
-                Location = new Point(12, 60),
+                Location = new Point(12, 64),
                 Size = new Size(frameW, frameH),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 20,
@@ -250,15 +250,15 @@ namespace PocketLog.Client
             };
 
             string capText = string.IsNullOrWhiteSpace(post.CaptionInside) ? "Khoảnh khắc" : post.CaptionInside.Trim();
-            int measuredCapW = TextRenderer.MeasureText(capText, FontMedium(8.8F)).Width + 38;
-            int initPillW = Math.Clamp(measuredCapW, 108, frameW - 32);
+            int measuredCapW = TextRenderer.MeasureText(capText, FontMedium(9.5F)).Width + 42;
+            int initPillW = Math.Clamp(measuredCapW, 118, frameW - 32);
 
             var pillCaption = MakeBtn(
                 capText,
                 (frameW - initPillW) / 2,
-                frameH - 50,
-                initPillW, 36, 18,
-                Color.FromArgb(24, 33, 47), Color.White, Color.Transparent, 0, 8.8F);
+                frameH - 54,
+                initPillW, 40, 20,
+                Color.FromArgb(24, 33, 47), Color.White, Color.Transparent, 0, 9.5F);
             if (isMyTopCard) pillCaption.Click += (s, e) => OpenMyGalleryScreen();
 
             if (post.CustomImage != null)
@@ -413,10 +413,10 @@ namespace PocketLog.Client
                         ? $"Tag: {string.Join(", ", item.TaggedFriends)}"
                         : "Cá nhân";
 
-                    var l1 = MakeLabel(item.HasTag ? GetCategoryShortClean(item.Category) : "Ảnh Locket", 10, 142, 8.3F, FontStyle.Bold, item.HasTag ? clrPrimaryGreen : clrTextMuted, 164);
+                    var l1 = MakeLabel(item.HasTag ? GetCategoryShortClean(item.Category) : "Ảnh Pocket", 10, 142, 8.8F, FontStyle.Bold, item.HasTag ? clrPrimaryGreen : clrTextMuted, 164);
                     l1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-                    var l2 = MakeLabel(item.HasTag ? $"{item.NoteTop} ({tagTxt})" : item.CaptionInside, 10, 164, 7.9F, FontStyle.Regular, clrTextMain, 164);
+                    var l2 = MakeLabel(item.HasTag ? $"{item.NoteTop} ({tagTxt})" : item.CaptionInside, 10, 166, 8.4F, FontStyle.Regular, clrTextMain, 164);
                     l2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                     cell.Controls.AddRange(new Control[] { mini, l1, l2 });

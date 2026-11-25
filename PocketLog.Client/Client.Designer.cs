@@ -18,7 +18,7 @@ namespace PocketLog.Client
             this.components = new System.ComponentModel.Container();
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             this.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular);
-            this.ClientSize = new System.Drawing.Size(460, 800);
+            this.ClientSize = new System.Drawing.Size(620, 1050);
             this.Text = "PocketLog";
         }
     }
