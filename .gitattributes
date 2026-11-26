@@ -61,3 +61,7 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+# Ensure Linux shell scripts always keep LF line endings when cloned on Ubuntu
+*.sh text eol=lf
+Dockerfile text eol=lf

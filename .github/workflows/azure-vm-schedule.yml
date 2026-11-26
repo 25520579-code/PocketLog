@@ -1,0 +1,48 @@
+name: Azure Linux VM Auto Start/Stop (07:00 - 00:00 VN)
+
+on:
+  schedule:
+    # 00:00 UTC = 07:00 sáng giờ Việt Nam (UTC+7) -> Tự động BẬT máy ảo
+    - cron: '0 0 * * *'
+    # 17:00 UTC = 00:00 đêm giờ Việt Nam (UTC+7) -> Tự động TẮT (deallocate) ngừng tính phí qua đêm
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Chọn bật (start) hoặc tắt (deallocate) máy ảo ngay lập tức'
+        required: true
+        default: 'start'
+        type: choice
+        options:
+          - start
+          - deallocate
+
+jobs:
+  manage-vm:
+    runs-on: ubuntu-latest
+    # Chỉ chạy khi bạn đã cấu hình AZURE_CREDENTIALS trong GitHub Secrets (tránh báo lỗi nếu chưa dùng)
+    if: ${{ vars.AZURE_VM_NAME != '' && vars.AZURE_RESOURCE_GROUP != '' }}
+    steps:
+      - name: Đăng nhập Azure CLI
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Bật hoặc Tắt Linux VM theo lịch giờ Việt Nam
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ACTION="${{ inputs.action }}"
+          elif [ "${{ github.event.schedule }}" = "0 0 * * *" ]; then
+            ACTION="start"
+          else
+            ACTION="deallocate"
+          fi
+
+          echo "Đang thực hiện lệnh '$ACTION' cho VM '${{ vars.AZURE_VM_NAME }}'..."
+          if [ "$ACTION" = "start" ]; then
+            az vm start --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --name "${{ vars.AZURE_VM_NAME }}"
+            echo "✓ Đã bật VM! Docker bên trong sẽ tự động khởi chạy PocketLog Server sau ~10 giây."
+          else
+            az vm deallocate --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --name "${{ vars.AZURE_VM_NAME }}" --no-wait
+            echo "✓ Đã gửi lệnh tắt (deallocate) VM để ngừng tính phí ban đêm."
+          fi

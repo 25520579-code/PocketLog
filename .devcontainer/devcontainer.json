@@ -1,0 +1,13 @@
+{
+  "name": "PocketLog Free Linux Cloud Server",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-8.0-bookworm",
+  "forwardPorts": [8888],
+  "postCreateCommand": "dotnet build PocketLog.Server.Linux/PocketLog.Server.Linux.csproj -c Release",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+services:
+  pocketlog-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pocketlog-server
+    restart: unless-stopped
+    ports:
+      - "8888:8888/tcp"
+      - "8889:8889/udp"
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - POCKETLOG_PORT=8888
+      - POCKETLOG_UDP_PORT=8889
+      - POCKETLOG_DATA_DIR=/data
+      # Mặc định để trống POCKETLOG_DB_CONN để dùng SQLite tích hợp sẵn (~45MB RAM, chạy mượt trên mọi VM Free 1GB RAM).
+      # Nếu muốn trỏ sang Azure SQL Database Free Tier, bỏ dấu # dòng dưới và điền Connection String:
+      # - POCKETLOG_DB_CONN=Server=tcp:ten-server.database.windows.net,1433;Initial Catalog=PocketLogDB;User ID=...;Password=...;Encrypt=True;TrustServerCertificate=False;
+    volumes:
+      - pocketlog_data:/data
+
+volumes:
+  pocketlog_data:

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Drawing;
+using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -90,11 +92,12 @@ namespace PocketLog.Client
             gridServer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 34F));
             gridServer.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var txtServerIp = MakeTextBox("", "Thêm địa chỉ IP", 0, 0, 100, 42, clrCardBg, true);
+            var savedEp = LoadSavedServerEndpoint();
+            var txtServerIp = MakeTextBox(savedEp.Host, "Thêm địa chỉ IP / Domain", 0, 0, 100, 42, clrCardBg, true);
             txtServerIp.Dock = DockStyle.Fill;
             txtServerIp.Margin = new Padding(2, 0, 6, 0);
 
-            var txtServerPort = MakeTextBox("", "Thêm Port", 0, 0, 80, 42, clrCardBg, true);
+            var txtServerPort = MakeTextBox(savedEp.Port, "Thêm Port", 0, 0, 80, 42, clrCardBg, true);
             txtServerPort.Dock = DockStyle.Fill;
             txtServerPort.Margin = new Padding(4, 0, 2, 0);
             txtServerPort.ForeColor = clrIndigo;
@@ -359,6 +362,50 @@ namespace PocketLog.Client
             return (false, "", 8888, "");
         }
 
+        private static string GetEndpointCachePath()
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PocketLog");
+            return Path.Combine(dir, "server_endpoint.txt");
+        }
+
+        private static (string Host, string Port) LoadSavedServerEndpoint()
+        {
+            try
+            {
+                string path = GetEndpointCachePath();
+                if (File.Exists(path))
+                {
+                    string[] parts = File.ReadAllText(path).Trim().Split('|');
+                    if (parts.Length >= 2 && !string.IsNullOrWhiteSpace(parts[0]))
+                    {
+                        return (parts[0].Trim(), parts[1].Trim());
+                    }
+                }
+            }
+            catch { }
+
+            string cfgHost = ConfigurationManager.AppSettings["DefaultServerHost"]?.Trim() ?? "";
+            string cfgPort = ConfigurationManager.AppSettings["DefaultServerPort"]?.Trim() ?? "";
+            if (!string.IsNullOrEmpty(cfgHost))
+            {
+                return (cfgHost, string.IsNullOrEmpty(cfgPort) ? "8888" : cfgPort);
+            }
+            return ("", "");
+        }
+
+        private static void SaveServerEndpoint(string host, int port)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(host) || host == "127.0.0.1" || host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+                    return;
+                string path = GetEndpointCachePath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, $"{host.Trim()}|{port}");
+            }
+            catch { }
+        }
+
         private async Task<bool> ConnectAndAuthenticateAsync(string ip, int port, string username, string password, bool isRegister, string initBudgetStr, Label lblStatus)
         {
             try
@@ -367,7 +414,7 @@ namespace PocketLog.Client
 
                 tcpClient = new TcpClient();
                 var connectTask = tcpClient.ConnectAsync(ip, port);
-                var timeoutTask = Task.Delay(3500);
+                var timeoutTask = Task.Delay(5000);
 
                 if (await Task.WhenAny(connectTask, timeoutTask) == timeoutTask)
                 {
@@ -382,6 +429,7 @@ namespace PocketLog.Client
                 isConnected = true;
                 currentServerIp = ip;
                 currentServerPort = port;
+                SaveServerEndpoint(ip, port);
 
                 int.TryParse(initBudgetStr.Replace(".", "").Replace(",", ""), out int customBudget);
                 if (customBudget <= 0) customBudget = 3500000;

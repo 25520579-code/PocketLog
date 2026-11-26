@@ -1,0 +1,9 @@
+**/.git
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/ServerStorage
+**/ServerData
+*.user
+*.suo

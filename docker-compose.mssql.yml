@@ -1,0 +1,39 @@
+# Tuỳ chọn dùng khi chạy trên Linux VM >= 4GB RAM (có gói $100 Azure) và muốn chạy kèm SQL Server 2022 container:
+# Lệnh chạy: MSSQL_SA_PASSWORD='MatKhauManh@2026' docker compose -f docker-compose.mssql.yml up -d --build
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: pocketlog-mssql
+    restart: unless-stopped
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_PID=Express
+      - TZ=Asia/Ho_Chi_Minh
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD:-PocketLog@2026Strong!}
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+  pocketlog-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pocketlog-server
+    restart: unless-stopped
+    depends_on:
+      - sqlserver
+    ports:
+      - "8888:8888/tcp"
+      - "8889:8889/udp"
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+      - POCKETLOG_PORT=8888
+      - POCKETLOG_UDP_PORT=8889
+      - POCKETLOG_DATA_DIR=/data
+      - POCKETLOG_DB_CONN=Data Source=sqlserver,1433;Initial Catalog=PocketLogDB;User ID=sa;Password=${MSSQL_SA_PASSWORD:-PocketLog@2026Strong!};Encrypt=False;TrustServerCertificate=True;Connect Timeout=30
+    volumes:
+      - pocketlog_storage:/data
+
+volumes:
+  mssql_data:
+  pocketlog_storage:
