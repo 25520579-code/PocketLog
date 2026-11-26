@@ -111,7 +111,7 @@ namespace PocketLog.Client
                 Guna2Panel cardActiveDebt = new Guna2Panel
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 256),
+                    Size = new Size(w, 268),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     BorderRadius = 22,
                     FillColor = clrCardBg,
@@ -125,28 +125,31 @@ namespace PocketLog.Client
                     ? $"Bạn nợ {currentDebt.CreditorName}"
                     : $"{currentDebt.DebtorName} nợ bạn";
 
-                var lblDebtTitle = MakeLabel($"Khoản chia: {currentDebt.Title}", 16, 12, 10.5F, FontStyle.Bold, clrTextMain, w - 32);
+                var lblDebtTitle = MakeLabel($"Khoản chia: {currentDebt.Title}", 16, 12, 10.2F, FontStyle.Bold, clrTextMain, w - 32);
                 lblDebtTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-                var lblDebtRole = MakeLabel($"{roleDesc}  •  Phần chia: {currentDebt.MyShare:N0}đ", 16, 36, 9.2F, FontStyle.Bold, isDebtor ? clrRedDanger : clrPrimaryGreen, w - 32);
+                var lblDebtRole = MakeLabel($"{roleDesc}  •  Phần chia: {currentDebt.MyShare:N0}đ", 16, 40, 9.2F, FontStyle.Bold, isDebtor ? clrRedDanger : clrPrimaryGreen, w - 32);
                 lblDebtRole.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
+                string stateTxt = currentDebt.IsConfirmedPaid ? "Đã hoàn thành" : (currentDebt.IsSentProof ? "Chờ xác nhận" : "Chưa thanh toán");
+                int stateBadgeW = Math.Max(152, MeasurePillBtnWidth(stateTxt, 8.2F, 15));
                 var badgeState = MakeBtn(
-                    currentDebt.IsConfirmedPaid ? "Đã hoàn thành" : (currentDebt.IsSentProof ? "Chờ xác nhận" : "Chưa thanh toán"),
-                    16, 62, 142, 28, 14,
+                    stateTxt,
+                    16, 68, stateBadgeW, 30, 15,
                     currentDebt.IsConfirmedPaid ? clrSoftGreenBg : clrAppBg,
                     currentDebt.IsConfirmedPaid ? clrPrimaryGreen : clrIndigo,
                     Color.Transparent, 0, 8.2F);
 
-                Label lblNote = MakeLabel(currentDebt.StatusNote, 168, 64, 8.2F, FontStyle.Regular, clrTextMuted, w - 184);
+                int noteLeft = badgeState.Right + 10;
+                Label lblNote = MakeLabel(currentDebt.StatusNote, noteLeft, 72, 8.2F, FontStyle.Regular, clrTextMuted, Math.Max(80, w - noteLeft - 16));
                 lblNote.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 cardActiveDebt.Controls.AddRange(new Control[] { lblDebtTitle, lblDebtRole, badgeState, lblNote });
 
                 Guna2Panel pnlBillImg = new Guna2Panel
                 {
-                    Location = new Point(16, 98),
-                    Size = new Size(150, 142),
+                    Location = new Point(16, 108),
+                    Size = new Size(150, 144),
                     BorderRadius = 14,
                     FillColor = clrInputBg,
                     BorderColor = clrBorderLight,
@@ -170,14 +173,15 @@ namespace PocketLog.Client
                     Visible = currentDebt.ProofImage == null,
                     BackColor = Color.Transparent
                 };
-                emptyProofWrap.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 56, 34, 38, 12, clrSoftGreenBg, clrPrimaryGreen));
+                emptyProofWrap.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 56, 26, 38, 12, clrSoftGreenBg, clrPrimaryGreen));
                 emptyProofWrap.Controls.Add(new Label
                 {
-                    Text = "Ảnh bill chuyển khoản",
-                    Font = FontRegular(8F),
+                    Text = "Ảnh bill\nchuyển khoản",
+                    Font = FontRegular(8.2F),
                     ForeColor = clrTextMuted,
-                    Location = new Point(6, 80),
-                    Size = new Size(138, 34),
+                    UseMnemonic = false,
+                    Location = new Point(6, 72),
+                    Size = new Size(138, 56),
                     TextAlign = ContentAlignment.TopCenter,
                     BackColor = Color.Transparent
                 });
@@ -186,14 +190,14 @@ namespace PocketLog.Client
                 pnlBillImg.Controls.Add(picProof);
                 cardActiveDebt.Controls.Add(pnlBillImg);
 
-                int btnRightW = w - 178 - 16;
-                var btnUploadProof = MakeBtn("Gửi ảnh bill CK", 178, 98, btnRightW, 64, 16, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 9.2F);
+                int btnRightW = Math.Max(140, w - 178 - 16);
+                var btnUploadProof = MakeBtn("Gửi ảnh bill CK", 178, 108, btnRightW, 66, 16, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 9F);
                 btnUploadProof.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                AttachBtnIcon(btnUploadProof, UiIcon.Upload, clrPrimaryGreen, 17);
+                AttachBtnIcon(btnUploadProof, UiIcon.Upload, clrPrimaryGreen, 16);
 
-                var btnFriendVerify = MakeBtn("Xác nhận hoàn thành", 178, 174, btnRightW, 66, 16, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9.5F);
+                var btnFriendVerify = MakeBtn("Xác nhận hoàn thành", 178, 186, btnRightW, 66, 16, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9F);
                 btnFriendVerify.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                AttachBtnIcon(btnFriendVerify, UiIcon.Check, Color.White, 17);
+                AttachBtnIcon(btnFriendVerify, UiIcon.Check, Color.White, 16);
 
                 if (currentDebt.IsConfirmedPaid)
                 {
@@ -255,7 +259,7 @@ namespace PocketLog.Client
                 cardActiveDebt.Controls.Add(btnUploadProof);
                 cardActiveDebt.Controls.Add(btnFriendVerify);
                 col.Controls.Add(cardActiveDebt);
-                y += 270;
+                y += 282;
             }
             else
             {
@@ -263,7 +267,7 @@ namespace PocketLog.Client
                 Guna2Panel compactEmpty = new Guna2Panel
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 84),
+                    Size = new Size(w, 94),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     BorderRadius = 18,
                     FillColor = clrCardBg,
@@ -271,30 +275,30 @@ namespace PocketLog.Client
                     BorderThickness = 1,
                     UseTransparentBackground = true
                 };
-                compactEmpty.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 16, 20, 44, 14, clrSoftGreenBg, clrPrimaryGreen));
-                var lEmpty1 = MakeLabel("Chưa có khoản chia tiền nào được gắn tag", 72, 18, 9.8F, FontStyle.Bold, clrTextMain, w - 88);
+                compactEmpty.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 16, 24, 44, 14, clrSoftGreenBg, clrPrimaryGreen));
+                var lEmpty1 = MakeLabel("Chưa có khoản chia tiền nào được gắn tag", 72, 16, 9.6F, FontStyle.Bold, clrTextMain, w - 88);
                 lEmpty1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                var lEmpty2 = MakeLabel("Gắn tag bạn bè lúc đăng ảnh chi tiêu để tự động chia hóa đơn", 72, 44, 8.6F, FontStyle.Regular, clrTextMuted, w - 88);
+                var lEmpty2 = MakeLabel("Gắn tag bạn bè lúc đăng ảnh chi tiêu để tự động chia hóa đơn", 72, 44, 8.4F, FontStyle.Regular, clrTextMuted, w - 88, lines: 2);
                 lEmpty2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
                 compactEmpty.Controls.Add(lEmpty1);
                 compactEmpty.Controls.Add(lEmpty2);
                 col.Controls.Add(compactEmpty);
-                y += 96;
+                y += 106;
             }
 
             var btnToggleUnpaid = MakeBtn(
                 $"Các khoản chi gắn tag chưa tất toán ({unpaidList.Count})",
-                0, y, w, 44, 16, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 9.2F);
+                0, y, w, 46, 16, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
             btnToggleUnpaid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            AttachBtnIcon(btnToggleUnpaid, isUnpaidDropdownOpen ? UiIcon.ChevronUp : UiIcon.ChevronDown, clrPrimaryGreen, 17);
+            AttachBtnIcon(btnToggleUnpaid, isUnpaidDropdownOpen ? UiIcon.ChevronUp : UiIcon.ChevronDown, clrPrimaryGreen, 16);
 
             btnToggleUnpaid.Click += (s, e) =>
             {
                 isUnpaidDropdownOpen = !isUnpaidDropdownOpen;
-                ActivateMenu(btnTabExpense, BuildExpenseScreen());
+                RefreshPaneContent("EXPENSE");
             };
             col.Controls.Add(btnToggleUnpaid);
-            y += 52;
+            y += 54;
 
             if (isUnpaidDropdownOpen)
             {
@@ -303,7 +307,7 @@ namespace PocketLog.Client
                     Guna2Panel emptyBox = new Guna2Panel
                     {
                         Location = new Point(0, y),
-                        Size = new Size(w, 52),
+                        Size = new Size(w, 54),
                         Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                         BorderRadius = 14,
                         FillColor = clrCardBg,
@@ -311,13 +315,19 @@ namespace PocketLog.Client
                         BorderThickness = 1,
                         UseTransparentBackground = true
                     };
-                    emptyBox.Controls.Add(MakeSoftIconBadge(UiIcon.Check, 14, 11, 30, 10, clrSoftGreenBg, clrPrimaryGreen));
-                    emptyBox.Controls.Add(MakeLabel("Tất cả các khoản chia tiền đều đã tất toán xong!", 54, 14, 9F, FontStyle.Bold, clrPrimaryGreen, w - 70));
+                    emptyBox.Controls.Add(MakeSoftIconBadge(UiIcon.Check, 14, 12, 30, 10, clrSoftGreenBg, clrPrimaryGreen));
+                    var lblAllPaid = MakeLabel("Tất cả các khoản chia tiền đều đã tất toán xong!", 54, 15, 9F, FontStyle.Bold, clrPrimaryGreen, w - 70);
+                    lblAllPaid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                    emptyBox.Controls.Add(lblAllPaid);
                     col.Controls.Add(emptyBox);
-                    y += 60;
+                    y += 62;
                 }
                 else
                 {
+                    int selBtnW = Math.Max(126, Math.Max(
+                        MeasurePillBtnWidth("Đang chọn", 8.6F, 19),
+                        MeasurePillBtnWidth("Kiểm tra", 8.6F, 19)));
+
                     foreach (var debt in unpaidList)
                     {
                         bool isSelected = currentDebt != null && debt.SplitId == currentDebt.SplitId;
@@ -327,7 +337,7 @@ namespace PocketLog.Client
                         Guna2Panel itemRow = new Guna2Panel
                         {
                             Location = new Point(0, y),
-                            Size = new Size(w, 86),
+                            Size = new Size(w, 94),
                             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                             BorderRadius = 18,
                             FillColor = isSelected ? clrSoftGreenBg : clrCardBg,
@@ -336,17 +346,17 @@ namespace PocketLog.Client
                             UseTransparentBackground = true
                         };
 
-                        int textMaxW = w - 134;
+                        int textMaxW = Math.Max(100, w - selBtnW - 38);
                         var r1 = MakeLabel($"{GetCategoryShortClean(debt.Category)}  •  {debt.Title}", 16, 10, 9.2F, FontStyle.Bold, clrTextMain, textMaxW);
                         r1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                        var r2 = MakeLabel($"{roleTag}  •  {debt.MyShare:N0}đ", 16, 33, 8.8F, FontStyle.Bold, rowIsDebtor ? clrRedDanger : clrPrimaryGreen, textMaxW);
+                        var r2 = MakeLabel($"{roleTag}  •  {debt.MyShare:N0}đ", 16, 37, 8.8F, FontStyle.Bold, rowIsDebtor ? clrRedDanger : clrPrimaryGreen, textMaxW);
                         r2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                        var r3 = MakeLabel($"{debt.Time}  •  {(debt.IsSentProof ? "Đã gửi bill" : "Chưa gửi bill")}", 16, 56, 8.2F, FontStyle.Regular, clrTextMuted, textMaxW);
+                        var r3 = MakeLabel($"{debt.Time}  •  {(debt.IsSentProof ? "Đã gửi bill" : "Chưa gửi bill")}", 16, 64, 8.2F, FontStyle.Regular, clrTextMuted, textMaxW);
                         r3.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                         var btnSelectDebt = MakeBtn(
                             isSelected ? "Đang chọn" : (rowIsDebtor ? "Trả ngay" : "Kiểm tra"),
-                            w - 114, 24, 100, 38, 19,
+                            w - selBtnW - 14, 27, selBtnW, 40, 20,
                             isSelected ? clrPrimaryGreen : clrAppBg,
                             isSelected ? Color.White : clrIndigo,
                             isSelected ? clrPrimaryGreen : clrBorderLight, 1, 8.6F);
@@ -355,21 +365,25 @@ namespace PocketLog.Client
                         btnSelectDebt.Click += (s, e) =>
                         {
                             selectedSplitId = debt.SplitId;
-                            ActivateMenu(btnTabExpense, BuildExpenseScreen());
+                            RefreshPaneContent("EXPENSE");
                         };
 
                         itemRow.Controls.AddRange(new Control[] { r1, r2, r3, btnSelectDebt });
                         col.Controls.Add(itemRow);
-                        y += 94;
+                        y += 102;
                     }
                 }
             }
 
             y += 8;
-            var lblSecCat = MakeLabel("Chi tiêu thực tế theo danh mục", 2, y, 11F, FontStyle.Bold, clrTextMain);
+            var lblSecCat = MakeLabel("Chi tiêu thực tế theo danh mục", 2, y, 11F, FontStyle.Bold, clrTextMain, w - 8);
             lblSecCat.Font = FontBold(11F);
+            lblSecCat.Height = TextRenderer.MeasureText("Ág", lblSecCat.Font).Height + 4;
+            lblSecCat.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             col.Controls.Add(lblSecCat);
-            y += 34;
+            y += 36;
+
+            int limBtnW = Math.Max(140, MeasurePillBtnWidth("Lưu hạn mức", 8.5F, 12));
 
             foreach (var cat in standardCategories)
             {
@@ -381,7 +395,7 @@ namespace PocketLog.Client
                 Guna2Panel catCard = new Guna2Panel
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 104),
+                    Size = new Size(w, 106),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     BorderRadius = 18,
                     FillColor = clrCardBg,
@@ -396,8 +410,8 @@ namespace PocketLog.Client
                     isOver ? clrRedDanger : clrPrimaryGreen);
                 catCard.Controls.Add(iconBadge);
 
-                int leftColW = w - 68 - 146;
-                var lblCatName = MakeLabel(GetCategoryCleanName(catName), 68, 14, 10F, FontStyle.Bold, clrTextMain, leftColW);
+                int leftColW = Math.Max(90, w - 68 - limBtnW - 26);
+                var lblCatName = MakeLabel(GetCategoryCleanName(catName), 68, 12, 10F, FontStyle.Bold, clrTextMain, leftColW);
                 lblCatName.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 var lblSpent = MakeLabel($"Đã tiêu: {spent:N0}đ / {limit:N0}đ", 68, 40, 8.8F, FontStyle.Bold, isOver ? clrRedDanger : clrPrimaryGreen, leftColW);
@@ -406,8 +420,8 @@ namespace PocketLog.Client
                 int pct = limit > 0 ? Math.Min(100, (int)((long)spent * 100 / limit)) : 100;
                 Guna2ProgressBar prg = new Guna2ProgressBar
                 {
-                    Location = new Point(16, 76),
-                    Size = new Size(w - 176, 12),
+                    Location = new Point(16, 78),
+                    Size = new Size(Math.Max(80, w - limBtnW - 44), 12),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     BorderRadius = 6,
                     Value = pct,
@@ -417,11 +431,11 @@ namespace PocketLog.Client
                     UseTransparentBackground = true
                 };
 
-                var txtLim = MakeTextBox(limit.ToString("N0"), "Hạn mức", w - 144, 14, 130, 36, clrCardBg, true);
+                var txtLim = MakeTextBox(limit.ToString("N0"), "Hạn mức", w - limBtnW - 14, 14, limBtnW, 36, clrCardBg, true);
                 txtLim.Anchor = AnchorStyles.Top | AnchorStyles.Right;
                 txtLim.TextAlign = HorizontalAlignment.Right;
 
-                var btnSetLim = MakeBtn("Lưu hạn mức", w - 144, 56, 130, 36, 12, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.6F);
+                var btnSetLim = MakeBtn("Lưu hạn mức", w - limBtnW - 14, 56, limBtnW, 36, 12, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.5F);
                 btnSetLim.Anchor = AnchorStyles.Top | AnchorStyles.Right;
                 btnSetLim.Click += async (s, e) =>
                 {
@@ -434,13 +448,13 @@ namespace PocketLog.Client
                             Category = catName,
                             NewLimit = nLim
                         }));
-                        ActivateMenu(btnTabExpense, BuildExpenseScreen());
+                        RefreshPaneContent("EXPENSE");
                     }
                 };
 
                 catCard.Controls.AddRange(new Control[] { lblCatName, lblSpent, prg, txtLim, btnSetLim });
                 col.Controls.Add(catCard);
-                y += 114;
+                y += 116;
             }
 
             int grandTotal = CalculateTotalPersonalSpent();
@@ -448,7 +462,7 @@ namespace PocketLog.Client
             Guna2Panel cardTotal = new Guna2Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 156),
+                Size = new Size(w, 160),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 22,
                 FillColor = clrSoftGreenBg,
@@ -457,16 +471,20 @@ namespace PocketLog.Client
                 UseTransparentBackground = true
             };
 
-            cardTotal.Controls.Add(MakeLabel("TỔNG CHI TIÊU CÁ NHÂN TRONG THÁNG", 18, 14, 9.2F, FontStyle.Bold, clrPrimaryGreen, w - 36));
-            var lblGrand = MakeLabel($"{grandTotal:N0}đ   /   Hạn mức: {totalBudgetLimit:N0}đ", 18, 38, 11.2F, FontStyle.Bold, grandTotal > totalBudgetLimit ? clrRedDanger : clrTextMain, w - 36);
-            lblGrand.Font = FontBold(11.2F);
+            var lblTotalHeader = MakeLabel("TỔNG CHI TIÊU CÁ NHÂN TRONG THÁNG", 18, 12, 9.2F, FontStyle.Bold, clrPrimaryGreen, w - 36);
+            lblTotalHeader.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            cardTotal.Controls.Add(lblTotalHeader);
+
+            var lblGrand = MakeLabel($"{grandTotal:N0}đ   /   Hạn mức: {totalBudgetLimit:N0}đ", 18, 38, 11F, FontStyle.Bold, grandTotal > totalBudgetLimit ? clrRedDanger : clrTextMain, w - 36);
+            lblGrand.Font = FontBold(11F);
+            lblGrand.Height = TextRenderer.MeasureText("Ág", lblGrand.Font).Height + 4;
             lblGrand.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             cardTotal.Controls.Add(lblGrand);
 
             int totalPct = totalBudgetLimit > 0 ? Math.Min(100, (int)((long)grandTotal * 100 / totalBudgetLimit)) : 100;
             Guna2ProgressBar prgTotal = new Guna2ProgressBar
             {
-                Location = new Point(18, 70),
+                Location = new Point(18, 72),
                 Size = new Size(w - 36, 14),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 7,
@@ -477,27 +495,28 @@ namespace PocketLog.Client
                 UseTransparentBackground = true
             };
 
+            int saveTotalBtnW = Math.Max(180, MeasurePillBtnWidth("Lưu tổng hạn mức", 9F, 14) + 6);
             var totalActionGrid = new BufferedTableLayout
             {
-                Location = new Point(16, 96),
-                Size = new Size(w - 32, 44),
+                Location = new Point(16, 98),
+                Size = new Size(w - 32, 46),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ColumnCount = 2,
                 RowCount = 1
             };
-            totalActionGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60F));
-            totalActionGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40F));
+            totalActionGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            totalActionGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, saveTotalBtnW));
             totalActionGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var txtTotalIn = MakeTextBox(totalBudgetLimit.ToString("N0"), "Tổng hạn mức", 0, 0, 180, 42, clrSoftGreenBg, true);
+            var txtTotalIn = MakeTextBox(totalBudgetLimit.ToString("N0"), "Tổng hạn mức", 0, 0, 140, 42, clrSoftGreenBg, true);
             txtTotalIn.Dock = DockStyle.Fill;
             txtTotalIn.FillColor = Color.White;
             txtTotalIn.BorderColor = clrSoftGreenBorder;
-            txtTotalIn.Margin = new Padding(2, 0, 6, 0);
+            txtTotalIn.Margin = new Padding(2, 1, 6, 1);
 
-            var btnSetTotal = MakeBtn("Lưu tổng hạn mức", 0, 0, 120, 42, 14, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9.2F);
+            var btnSetTotal = MakeBtn("Lưu tổng hạn mức", 0, 0, saveTotalBtnW - 4, 42, 14, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9F);
             btnSetTotal.Dock = DockStyle.Fill;
-            btnSetTotal.Margin = new Padding(2, 0, 2, 0);
+            btnSetTotal.Margin = new Padding(2, 1, 2, 1);
             btnSetTotal.Click += async (s, e) =>
             {
                 if (int.TryParse(txtTotalIn.Text.Replace(".", "").Replace(",", "").Trim(), out int nTot) && nTot > 0)
@@ -508,7 +527,7 @@ namespace PocketLog.Client
                         UserId = currentUserId,
                         NewMonthlyBudget = nTot
                     }));
-                    ActivateMenu(btnTabExpense, BuildExpenseScreen());
+                    RefreshPaneContent("EXPENSE");
                 }
             };
 
@@ -518,13 +537,13 @@ namespace PocketLog.Client
             cardTotal.Controls.Add(prgTotal);
             cardTotal.Controls.Add(totalActionGrid);
             col.Controls.Add(cardTotal);
-            y += 170;
+            y += 174;
 
-            var btnExportCsv = MakeBtn("Xuất báo cáo chi tiêu (.CSV / Excel)", 0, y, w, 48, 16, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 9.5F);
+            var btnExportCsv = MakeBtn("Xuất báo cáo chi tiêu (.CSV / Excel)", 0, y, w, 48, 16, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 9.2F);
             btnExportCsv.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             AttachBtnIcon(btnExportCsv, UiIcon.Receipt, clrPrimaryGreen, 17);
 
-            var lblExportStatus = MakeLabel("", 4, y + 48, 8F, FontStyle.Regular, clrTextMuted, w - 8);
+            var lblExportStatus = MakeLabel("", 4, y + 54, 8.2F, FontStyle.Regular, clrTextMuted, w - 8);
             lblExportStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             btnExportCsv.Click += (s, e) =>

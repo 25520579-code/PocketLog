@@ -19,29 +19,33 @@ namespace PocketLog.Client
             Panel topBar = new Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 40),
+                Size = new Size(w, 42),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent
             };
 
-            var lblTitle = MakeLabel("Bảng tin", 2, 4, 13.5F, FontStyle.Bold, clrTextMain);
-            lblTitle.Font = FontBold(13.5F);
-            topBar.Controls.Add(lblTitle);
-
-            var btnFriendsTop = MakeBtn($"Bạn bè ({myFriends.Count})", w - 132, 2, 132, 36, 18, clrCardBg, clrIndigo, clrBorderLight, 1, 8.8F);
+            int frBtnW = Math.Max(140, MeasurePillBtnWidth($"Bạn bè ({myFriends.Count})", 8.8F, 19, true, 16));
+            var btnFriendsTop = MakeBtn($"Bạn bè ({myFriends.Count})", w - frBtnW, 2, frBtnW, 38, 19, clrCardBg, clrIndigo, clrBorderLight, 1, 8.8F);
             btnFriendsTop.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             AttachBtnIcon(btnFriendsTop, UiIcon.Users, clrIndigo, 16);
             btnFriendsTop.Click += (s, e) => OpenFriendsDrawer();
 
-            var btnGallery = MakeBtn("Kho ảnh", w - 248, 2, 110, 36, 18, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
+            int galBtnW = Math.Max(124, MeasurePillBtnWidth("Kho ảnh", 8.8F, 19, true, 16));
+            var btnGallery = MakeBtn("Kho ảnh", w - frBtnW - 8 - galBtnW, 2, galBtnW, 38, 19, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
             btnGallery.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             AttachBtnIcon(btnGallery, UiIcon.Photo, clrPrimaryGreen, 16);
             btnGallery.Click += (s, e) => OpenMyGalleryScreen();
 
+            var lblTitle = MakeLabel("Bảng tin", 2, 5, 13F, FontStyle.Bold, clrTextMain, Math.Max(80, btnGallery.Left - 10));
+            lblTitle.Font = FontBold(13F);
+            lblTitle.Height = TextRenderer.MeasureText("Ág", lblTitle.Font).Height + 4;
+            lblTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            topBar.Controls.Add(lblTitle);
+
             topBar.Controls.Add(btnGallery);
             topBar.Controls.Add(btnFriendsTop);
             col.Controls.Add(topBar);
-            y += 50;
+            y += 52;
 
             LocketPost latestMine = posts.FirstOrDefault(p => p.IsMine);
             if (latestMine != null)
@@ -92,7 +96,7 @@ namespace PocketLog.Client
                 };
                 emptyMine.Resize += (s, e) => camBadge.Left = (emptyMine.Width - camBadge.Width) / 2;
 
-                EventHandler goCam = (s, e) => { activeTabName = "CAMERA"; ActivateMenu(btnTabCamera, BuildCameraScreen()); };
+                EventHandler goCam = (s, e) => EnsureTabVisible("CAMERA");
                 emptyMine.Click += goCam;
                 lblEmpty1.Click += goCam;
                 lblEmpty2.Click += goCam;
@@ -106,22 +110,29 @@ namespace PocketLog.Client
             Panel secHeader = new Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 32),
+                Size = new Size(w, 34),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent
             };
             var lblSec = MakeLabel("Khoảnh khắc từ bạn bè", 4, 5, 10F, FontStyle.Bold, clrIndigo);
+            secHeader.Controls.Add(lblSec);
+
+            int lineStartX = lblSec.Right + 12;
             var lineSec = new Panel
             {
-                Location = new Point(176, 16),
-                Size = new Size(w - 180, 1),
+                Location = new Point(lineStartX, lblSec.Top + lblSec.Height / 2),
+                Size = new Size(Math.Max(16, w - lineStartX - 4), 1),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = clrBorderLight
             };
-            secHeader.Controls.Add(lblSec);
+            secHeader.Resize += (s, e) =>
+            {
+                int lx = lblSec.Right + 12;
+                lineSec.SetBounds(lx, lblSec.Top + lblSec.Height / 2, Math.Max(16, secHeader.Width - lx - 4), 1);
+            };
             secHeader.Controls.Add(lineSec);
             col.Controls.Add(secHeader);
-            y += 38;
+            y += 40;
 
             var friendPosts = posts.Where(p => !p.IsMine).ToList();
             if (friendPosts.Count == 0)
@@ -193,7 +204,7 @@ namespace PocketLog.Client
         {
             Guna2Panel card = new Guna2Panel
             {
-                Size = new Size(cardWidth, 470),
+                Size = new Size(cardWidth, 476),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 24,
                 FillColor = clrCardBg,
@@ -207,7 +218,7 @@ namespace PocketLog.Client
             {
                 Text = string.IsNullOrEmpty(post.Author) ? "U" : post.Author.Substring(0, 1).ToUpper(),
                 Size = new Size(42, 42),
-                Location = new Point(14, 12),
+                Location = new Point(14, 14),
                 FillColor = isMyTopCard ? clrPrimaryGreen : Color.FromArgb(100, 116, 139),
                 ForeColor = Color.White,
                 Font = FontMedium(10.5F),
@@ -228,7 +239,7 @@ namespace PocketLog.Client
             var lblAuthor = MakeLabel($"{post.Author}   •   {post.Time}", 64, 10, 10F, FontStyle.Bold, clrTextMain, cardWidth - 80);
             lblAuthor.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            var lblSub = MakeLabel(topText, 64, 33, 8.8F, post.HasTag ? FontStyle.Bold : FontStyle.Regular, post.HasTag ? clrPrimaryGreen : clrTextMuted, cardWidth - 80);
+            var lblSub = MakeLabel(topText, 64, 37, 8.8F, post.HasTag ? FontStyle.Bold : FontStyle.Regular, post.HasTag ? clrPrimaryGreen : clrTextMuted, cardWidth - 80);
             lblSub.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             card.Controls.Add(avatar);
@@ -239,7 +250,7 @@ namespace PocketLog.Client
             int frameH = 390;
             Guna2Panel photoFrame = new Guna2Panel
             {
-                Location = new Point(12, 64),
+                Location = new Point(12, 70),
                 Size = new Size(frameW, frameH),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 20,
@@ -250,16 +261,29 @@ namespace PocketLog.Client
             };
 
             string capText = string.IsNullOrWhiteSpace(post.CaptionInside) ? "Khoảnh khắc" : post.CaptionInside.Trim();
-            int measuredCapW = TextRenderer.MeasureText(capText, FontMedium(9.5F)).Width + 42;
-            int initPillW = Math.Clamp(measuredCapW, 118, frameW - 32);
+            int measuredCapW = MeasurePillBtnWidth(capText, 9.5F, 21);
+            int maxInitPillW = Math.Max(120, frameW - 24);
+            int initPillW = Math.Clamp(measuredCapW, 120, maxInitPillW);
+            bool initTwoLines = measuredCapW > maxInitPillW;
+            int initPillH = initTwoLines ? 58 : 42;
 
             var pillCaption = MakeBtn(
                 capText,
                 (frameW - initPillW) / 2,
-                frameH - 54,
-                initPillW, 40, 20,
+                frameH - initPillH - 14,
+                initPillW, initPillH, initTwoLines ? 18 : 21,
                 Color.FromArgb(24, 33, 47), Color.White, Color.Transparent, 0, 9.5F);
             if (isMyTopCard) pillCaption.Click += (s, e) => OpenMyGalleryScreen();
+
+            Action<int> syncCaptionPill = (pw) =>
+            {
+                int maxW = Math.Max(120, pw - 24);
+                int newW = Math.Clamp(measuredCapW, 120, maxW);
+                bool multi = measuredCapW > maxW;
+                int newH = multi ? 58 : 42;
+                pillCaption.BorderRadius = multi ? 18 : 21;
+                pillCaption.SetBounds((pw - newW) / 2, photoFrame.Height - newH - 14, newW, newH);
+            };
 
             if (post.CustomImage != null)
             {
@@ -285,9 +309,7 @@ namespace PocketLog.Client
                         pic.Image = FitImageCover(post.CustomImage, pw, photoFrame.Height);
                         prev?.Dispose();
                     }
-                    int newPillW = Math.Clamp(measuredCapW, 108, Math.Max(110, pw - 32));
-                    pillCaption.Width = newPillW;
-                    pillCaption.Left = (pw - newPillW) / 2;
+                    syncCaptionPill(pw);
                 };
 
                 pic.Disposed += (s, e) => { pic.Image?.Dispose(); };
@@ -304,9 +326,7 @@ namespace PocketLog.Client
                 {
                     int pw = photoFrame.Width;
                     centerIco.Left = (pw - centerIco.Width) / 2;
-                    int newPillW = Math.Clamp(measuredCapW, 108, Math.Max(110, pw - 32));
-                    pillCaption.Width = newPillW;
-                    pillCaption.Left = (pw - newPillW) / 2;
+                    syncCaptionPill(pw);
                 };
                 if (isMyTopCard) centerIco.Click += (s, e) => OpenMyGalleryScreen();
                 photoFrame.Controls.Add(centerIco);
@@ -326,32 +346,55 @@ namespace PocketLog.Client
 
         private void OpenMyGalleryScreen()
         {
+            isFeedShowingGallery = true;
+            if (IsTabActive("FEED"))
+            {
+                RefreshPaneContent("FEED");
+            }
+            else
+            {
+                HandleBottomTabClick("FEED");
+                isFeedShowingGallery = true;
+                RefreshPaneContent("FEED");
+            }
+        }
+
+        private Control BuildMyGalleryControl()
+        {
             Panel page = CreateResponsiveScrollPage(out Panel col);
             int w = col.Width;
             int y = 14;
 
-            var btnBack = MakeBtn("Quay lại Bảng tin", 0, y, 152, 34, 17, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.6F);
+            int backW = Math.Max(188, MeasurePillBtnWidth("Quay lại Bảng tin", 8.6F, 19, true, 15));
+            var btnBack = MakeBtn("Quay lại Bảng tin", 0, y, backW, 38, 19, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.6F);
             AttachBtnIcon(btnBack, UiIcon.ChevronLeft, clrPrimaryGreen, 15);
-            btnBack.Click += (s, e) => ActivateMenu(btnTabFeed, BuildFeedScreen());
+            btnBack.Click += (s, e) =>
+            {
+                isFeedShowingGallery = false;
+                RefreshPaneContent("FEED");
+            };
             col.Controls.Add(btnBack);
-            y += 46;
+            y += 48;
 
             var lblTitle = MakeLabel($"Kho ảnh của {currentFullName}", 2, y, 11.5F, FontStyle.Bold, clrTextMain, w - 8);
             lblTitle.Font = FontBold(11.5F);
+            lblTitle.Height = TextRenderer.MeasureText("Ág", lblTitle.Font).Height + 4;
             lblTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             col.Controls.Add(lblTitle);
-            y += 34;
+            y += 36;
 
             var myPosts = posts.Where(p => p.IsMine).ToList();
             if (myPosts.Count == 0)
             {
-                col.Controls.Add(MakeLabel("Chưa có tấm ảnh nào trong kho lưu trữ của bạn.", 4, y + 8, 9F, FontStyle.Regular, clrTextMuted, w - 8));
+                var lblEmptyGal = MakeLabel("Chưa có tấm ảnh nào trong kho lưu trữ của bạn.", 4, y + 8, 9F, FontStyle.Regular, clrTextMuted, w - 8);
+                lblEmptyGal.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                col.Controls.Add(lblEmptyGal);
                 y += 48;
             }
             else
             {
                 int rows = (myPosts.Count + 1) / 2;
-                int rowHeight = 212;
+                int rowHeight = 222;
                 var grid = new BufferedTableLayout
                 {
                     Location = new Point(0, y),
@@ -370,6 +413,7 @@ namespace PocketLog.Client
                     var item = myPosts[i];
                     Guna2Panel cell = new Guna2Panel
                     {
+                        Size = new Size(200, rowHeight - 12),
                         Dock = DockStyle.Fill,
                         Margin = new Padding(i % 2 == 0 ? 0 : 6, 4, i % 2 == 0 ? 6 : 0, 8),
                         BorderRadius = 18,
@@ -382,7 +426,7 @@ namespace PocketLog.Client
                     Guna2Panel mini = new Guna2Panel
                     {
                         Location = new Point(8, 8),
-                        Size = new Size(168, 128),
+                        Size = new Size(184, 128),
                         Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                         BorderRadius = 14,
                         FillColor = item.PhotoBg,
@@ -404,7 +448,7 @@ namespace PocketLog.Client
                     }
                     else
                     {
-                        var ico = MakeSoftIconBadge(GetCategoryIcon(item.Category), 62, 42, 44, 14, Color.FromArgb(60, 255, 255, 255), Color.White);
+                        var ico = MakeSoftIconBadge(GetCategoryIcon(item.Category), 70, 42, 44, 14, Color.FromArgb(60, 255, 255, 255), Color.White);
                         mini.Resize += (s, e) => ico.Left = (mini.Width - ico.Width) / 2;
                         mini.Controls.Add(ico);
                     }
@@ -413,10 +457,10 @@ namespace PocketLog.Client
                         ? $"Tag: {string.Join(", ", item.TaggedFriends)}"
                         : "Cá nhân";
 
-                    var l1 = MakeLabel(item.HasTag ? GetCategoryShortClean(item.Category) : "Ảnh Pocket", 10, 142, 8.8F, FontStyle.Bold, item.HasTag ? clrPrimaryGreen : clrTextMuted, 164);
+                    var l1 = MakeLabel(item.HasTag ? GetCategoryShortClean(item.Category) : "Ảnh Pocket", 10, 142, 8.8F, FontStyle.Bold, item.HasTag ? clrPrimaryGreen : clrTextMuted, 180);
                     l1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-                    var l2 = MakeLabel(item.HasTag ? $"{item.NoteTop} ({tagTxt})" : item.CaptionInside, 10, 166, 8.4F, FontStyle.Regular, clrTextMain, 164);
+                    var l2 = MakeLabel(item.HasTag ? $"{item.NoteTop} ({tagTxt})" : item.CaptionInside, 10, 169, 8.4F, FontStyle.Regular, clrTextMain, 180);
                     l2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                     cell.Controls.AddRange(new Control[] { mini, l1, l2 });
@@ -428,8 +472,7 @@ namespace PocketLog.Client
             }
 
             col.Height = y + 20;
-            pnlMainContainer.Controls.Clear();
-            pnlMainContainer.Controls.Add(page);
+            return page;
         }
     }
 }

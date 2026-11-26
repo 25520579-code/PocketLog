@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using Guna.UI2.WinForms;
@@ -41,7 +42,6 @@ namespace PocketLog.Client
         }
 
         private Guna2BorderlessForm borderlessForm;
-        private Guna2DragControl dragControl;
         private Guna2Panel pnlHeader, pnlMainContainer, pnlBottomNav;
         private Guna2Panel pnlHeaderUserChip;
         private Guna2CircleButton avtHeaderUser;
@@ -152,6 +152,14 @@ namespace PocketLog.Client
         private bool isUnpaidDropdownOpen = false;
         private int selectedSplitId = 0;
         private string activeTabName = "AUTH";
+        private readonly List<string> activeTabs = new List<string>();
+        private readonly Dictionary<string, Panel> paneHosts = new Dictionary<string, Panel>();
+        private bool isFeedShowingGallery = false;
+        private Label lblSplitModeHint;
+
+        protected const int SplitCapableMinWidth = 1100;
+        protected bool IsSplitModeCapable => this.WindowState == FormWindowState.Maximized || this.ClientSize.Width >= SplitCapableMinWidth;
+        protected bool IsTabActive(string tabKey) => activeTabs.Contains(tabKey);
 
         protected const int DefaultColWidth = 560;
         protected const int MaxColWidth = 760;
@@ -297,8 +305,8 @@ namespace PocketLog.Client
                 int availW = scrollRoot.ClientSize.Width;
                 if (availW <= 0) return;
 
-                int sidePad = 16;
-                int targetW = Math.Clamp(availW - sidePad * 2, 480, MaxColWidth);
+                int sidePad = availW < 450 ? 10 : 16;
+                int targetW = Math.Clamp(availW - sidePad * 2, 260, MaxColWidth);
                 int targetX = Math.Max(sidePad, (availW - targetW) / 2);
                 int currentScrollY = scrollRoot.AutoScrollPosition.Y;
 
@@ -308,6 +316,8 @@ namespace PocketLog.Client
                     column.Width = targetW;
                 }
             }
+
+            AttachEdgeResizeRedirector(scrollRoot);
 
             scrollRoot.Resize += (s, e) => SyncColumnBounds();
             scrollRoot.Layout += (s, e) => SyncColumnBounds();
@@ -622,7 +632,7 @@ namespace PocketLog.Client
             return badge;
         }
 
-        protected Label MakeLabel(string text, int x, int y, float size, FontStyle style, Color color, int maxWidth = 0)
+        protected Label MakeLabel(string text, int x, int y, float size, FontStyle style, Color color, int maxWidth = 0, int lines = 1)
         {
             Font chosenFont = style == FontStyle.Bold
                 ? FontMedium(size)
@@ -640,17 +650,27 @@ namespace PocketLog.Client
 
             if (maxWidth > 0)
             {
-                int safeHeight = Math.Max(lbl.PreferredHeight + 4, (int)Math.Ceiling(size * 2.55f) + 4);
+                int lineH = TextRenderer.MeasureText("Ág", chosenFont).Height;
+                int safeHeight = lineH * Math.Max(1, lines) + 4;
                 lbl.AutoSize = false;
                 lbl.Size = new Size(maxWidth, safeHeight);
                 lbl.AutoEllipsis = true;
-                lbl.TextAlign = ContentAlignment.MiddleLeft;
+                lbl.TextAlign = ContentAlignment.TopLeft;
             }
             else
             {
                 lbl.AutoSize = true;
             }
             return lbl;
+        }
+
+        protected int MeasurePillBtnWidth(string text, float fontSize = 8.8F, int radius = 16, bool hasIcon = false, int iconPx = 16)
+        {
+            using Font f = FontMedium(fontSize);
+            int textW = TextRenderer.MeasureText(text ?? "", f, new Size(2400, 200), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+            int iconExtra = hasIcon ? (iconPx + 12) : 0;
+            int sidePad = Math.Max(38, radius + 20);
+            return textW + iconExtra + sidePad;
         }
 
         protected Guna2Button MakeBtn(string text, int x, int y, int w, int h, int radius, Color fill, Color fore, Color border, int borderThick = 1, float fontSize = 8.8F)
@@ -713,24 +733,151 @@ namespace PocketLog.Client
             return tb;
         }
 
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
         private Guna2ControlBox btnWinMin, btnWinMax, btnWinClose;
+        private Label lblBrand;
+
+        private sealed class ChildEdgeRedirector : NativeWindow
+        {
+            private readonly Client owner;
+            private readonly Control target;
+
+            public ChildEdgeRedirector(Client owner, Control target)
+            {
+                this.owner = owner;
+                this.target = target;
+                if (target.IsHandleCreated) AssignHandle(target.Handle);
+                target.HandleCreated += OnHandleCreated;
+                target.HandleDestroyed += OnHandleDestroyed;
+            }
+
+            private void OnHandleCreated(object sender, EventArgs e) => AssignHandle(target.Handle);
+            private void OnHandleDestroyed(object sender, EventArgs e) => ReleaseHandle();
+
+            protected override void WndProc(ref Message m)
+            {
+                const int WM_NCHITTEST = 0x84;
+                const int HTTRANSPARENT = -1;
+                if (m.Msg == WM_NCHITTEST && owner != null && !owner.IsDisposed && owner.WindowState == FormWindowState.Normal)
+                {
+                    int lp = m.LParam.ToInt32();
+                    Point screenPt = new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF));
+                    if (owner.GetResizeHitTest(screenPt) != 0)
+                    {
+                        m.Result = (IntPtr)HTTRANSPARENT;
+                        return;
+                    }
+                }
+                base.WndProc(ref m);
+            }
+        }
+
+        protected void AttachEdgeResizeRedirector(Control ctrl)
+        {
+            if (ctrl == null) return;
+            _ = new ChildEdgeRedirector(this, ctrl);
+        }
+
+        private int GetResizeHitTest(Point screenPt)
+        {
+            if (this.WindowState != FormWindowState.Normal) return 0;
+
+            Point pt = this.PointToClient(screenPt);
+            int w = this.ClientSize.Width;
+            int h = this.ClientSize.Height;
+            const int edgeGrip = 8;
+            const int cornerGrip = 18;
+
+            const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
+                      HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
+
+            bool nearLeft = pt.X <= edgeGrip;
+            bool nearRight = pt.X >= w - edgeGrip;
+            bool nearTop = pt.Y <= edgeGrip;
+            bool nearBottom = pt.Y >= h - edgeGrip;
+
+            bool inCornerLeft = pt.X <= cornerGrip;
+            bool inCornerRight = pt.X >= w - cornerGrip;
+            bool inCornerTop = pt.Y <= cornerGrip;
+            bool inCornerBottom = pt.Y >= h - cornerGrip;
+
+            if ((nearLeft && inCornerTop) || (nearTop && inCornerLeft)) return HTTOPLEFT;
+            if ((nearRight && inCornerTop) || (nearTop && inCornerRight)) return HTTOPRIGHT;
+            if ((nearLeft && inCornerBottom) || (nearBottom && inCornerLeft)) return HTBOTTOMLEFT;
+            if ((nearRight && inCornerBottom) || (nearBottom && inCornerRight)) return HTBOTTOMRIGHT;
+
+            if (nearLeft) return HTLEFT;
+            if (nearRight) return HTRIGHT;
+            if (nearTop) return HTTOP;
+            if (nearBottom) return HTBOTTOM;
+
+            return 0;
+        }
+
+        private void BeginDragWindowFromHeader(object sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            if (GetResizeHitTest(Cursor.Position) != 0) return;
+            ReleaseCapture();
+            SendMessage(this.Handle, 0xA1, 0x2, 0);
+        }
 
         private void SetupPhoneShell()
         {
             this.Controls.Clear();
+            var workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1440, 900);
+            int initW = Math.Clamp(560, 420, Math.Max(420, workArea.Width - 60));
+            int initH = Math.Clamp(workArea.Height - 56, 640, 900);
+
             this.FormBorderStyle = FormBorderStyle.None;
-            this.Size = new Size(620, 1050);
-            this.MinimumSize = new Size(540, 780);
+            this.Size = new Size(initW, initH);
+            this.MinimumSize = new Size(445, 580);
+            this.MaximizedBounds = workArea;
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = clrBorderLight;
-            this.Padding = new Padding(1);
+            this.Padding = new Padding(3);
+            this.ResizeRedraw = true;
 
             borderlessForm = new Guna2BorderlessForm
             {
                 ContainerControl = this,
-                BorderRadius = 28,
-                ResizeForm = true,
+                BorderRadius = 20,
+                ResizeForm = false,
+                DragForm = false,
                 HasFormShadow = true
+            };
+
+            this.Resize += (s, e) =>
+            {
+                if (this.WindowState == FormWindowState.Minimized) return;
+
+                bool isMax = this.WindowState == FormWindowState.Maximized;
+                int targetPad = isMax ? 0 : 3;
+                if (this.Padding.All != targetPad)
+                    this.Padding = new Padding(targetPad);
+                if (borderlessForm != null)
+                {
+                    int targetRad = isMax ? 0 : 20;
+                    if (borderlessForm.BorderRadius != targetRad)
+                        borderlessForm.BorderRadius = targetRad;
+                }
+
+                if (activeTabs.Count > 1 && !IsSplitModeCapable)
+                {
+                    CollapseToSingleMostRecentTab();
+                }
+
+                LayoutBottomNavButtons();
+
+                if (pnlDrawerBackdrop != null && pnlMainContainer != null && pnlDrawerBackdrop.Visible)
+                {
+                    pnlDrawerBackdrop.Bounds = pnlMainContainer.Bounds;
+                }
             };
 
             pnlHeader = new Guna2Panel
@@ -743,11 +890,12 @@ namespace PocketLog.Client
             pnlHeader.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = clrBorderLight });
 
             var logoBadge = MakeSoftIconBadge(UiIcon.Brand, 14, 13, 30, 10, clrSoftGreenBg, clrPrimaryGreen);
-            var lblBrand = new Label
+            lblBrand = new Label
             {
                 Text = "PocketLog",
                 Location = new Point(50, 15),
                 AutoSize = true,
+                UseMnemonic = false,
                 Font = FontBold(11.2F),
                 ForeColor = clrPrimaryGreen,
                 BackColor = Color.Transparent
@@ -755,12 +903,16 @@ namespace PocketLog.Client
             pnlHeader.Controls.Add(logoBadge);
             pnlHeader.Controls.Add(lblBrand);
 
+            pnlHeader.MouseDown += BeginDragWindowFromHeader;
+            logoBadge.MouseDown += BeginDragWindowFromHeader;
+            lblBrand.MouseDown += BeginDragWindowFromHeader;
+
             // Chip tài khoản mềm mại thay cho ký tự 👤 bị cắt góc
             pnlHeaderUserChip = new Guna2Panel
             {
-                Location = new Point(150, 12),
-                Size = new Size(124, 32),
-                BorderRadius = 16,
+                Location = new Point(150, 11),
+                Size = new Size(132, 34),
+                BorderRadius = 17,
                 FillColor = clrSoftGreenBg,
                 Visible = false,
                 BackColor = Color.Transparent,
@@ -769,7 +921,7 @@ namespace PocketLog.Client
             avtHeaderUser = new Guna2CircleButton
             {
                 Text = "U",
-                Size = new Size(24, 24),
+                Size = new Size(26, 26),
                 Location = new Point(4, 4),
                 FillColor = clrPrimaryGreen,
                 ForeColor = Color.White,
@@ -781,10 +933,11 @@ namespace PocketLog.Client
             lblHeaderUser = new Label
             {
                 Text = "",
-                Location = new Point(32, 4),
-                Size = new Size(88, 24),
+                Location = new Point(34, 4),
+                Size = new Size(92, 26),
                 Font = FontMedium(8.5F),
                 ForeColor = clrPrimaryGreen,
+                UseMnemonic = false,
                 AutoEllipsis = true,
                 TextAlign = ContentAlignment.MiddleLeft,
                 BackColor = Color.Transparent
@@ -793,7 +946,8 @@ namespace PocketLog.Client
             pnlHeaderUserChip.Controls.Add(lblHeaderUser);
             pnlHeader.Controls.Add(pnlHeaderUserChip);
 
-            btnLogoutTop = MakeBtn("Đăng xuất", 268, 12, 114, 32, 16, clrAppBg, clrIndigo, Color.Transparent, 0, 8.5F);
+            int logoutW = Math.Max(108, MeasurePillBtnWidth("Đăng xuất", 8.5F, 17));
+            btnLogoutTop = MakeBtn("Đăng xuất", 268, 11, logoutW, 34, 17, clrAppBg, clrIndigo, Color.Transparent, 0, 8.5F);
             btnLogoutTop.HoverState.FillColor = clrSoftRedBg;
             btnLogoutTop.HoverState.ForeColor = clrRedDanger;
             btnLogoutTop.Visible = false;
@@ -828,17 +982,24 @@ namespace PocketLog.Client
                 HoverState = { FillColor = clrRedDanger, IconColor = Color.White }
             };
 
-            pnlHeader.Resize += (s, e) => LayoutHeaderControls();
-            pnlHeader.DoubleClick += (s, e) =>
+            EventHandler toggleMax = (s, e) =>
             {
-                this.WindowState = this.WindowState == FormWindowState.Maximized
-                    ? FormWindowState.Normal
-                    : FormWindowState.Maximized;
+                if (this.WindowState == FormWindowState.Normal)
+                {
+                    this.MaximizedBounds = Screen.FromControl(this).WorkingArea;
+                    this.WindowState = FormWindowState.Maximized;
+                }
+                else
+                {
+                    this.WindowState = FormWindowState.Normal;
+                }
             };
+            pnlHeader.Resize += (s, e) => LayoutHeaderControls();
+            pnlHeader.DoubleClick += toggleMax;
+            lblBrand.DoubleClick += toggleMax;
 
             pnlHeader.Controls.AddRange(new Control[] { btnWinMin, btnWinMax, btnWinClose });
             LayoutHeaderControls();
-            dragControl = new Guna2DragControl { TargetControl = pnlHeader };
 
             // Thanh điều hướng đáy phong cách Android Material / Locket
             pnlBottomNav = new Guna2Panel
@@ -851,16 +1012,29 @@ namespace PocketLog.Client
             };
             pnlBottomNav.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = clrBorderLight });
 
-            btnTabFeed = MakeBtn("Bảng tin", 14, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.5F);
-            btnTabCamera = MakeBtn("Chụp ảnh", 136, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.5F);
-            btnTabExpense = MakeBtn("Chi tiêu", 258, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.5F);
+            btnTabFeed = MakeBtn("Bảng tin", 14, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabCamera = MakeBtn("Chụp ảnh", 136, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabExpense = MakeBtn("Chi tiêu", 258, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
 
-            btnTabFeed.Click += (s, e) => { activeTabName = "FEED"; ActivateMenu(btnTabFeed, BuildFeedScreen()); };
-            btnTabCamera.Click += (s, e) => { activeTabName = "CAMERA"; ActivateMenu(btnTabCamera, BuildCameraScreen()); };
-            btnTabExpense.Click += (s, e) => { activeTabName = "EXPENSE"; ActivateMenu(btnTabExpense, BuildExpenseScreen()); };
+            btnTabFeed.Click += (s, e) => HandleBottomTabClick("FEED");
+            btnTabCamera.Click += (s, e) => HandleBottomTabClick("CAMERA");
+            btnTabExpense.Click += (s, e) => HandleBottomTabClick("EXPENSE");
+
+            lblSplitModeHint = new Label
+            {
+                Text = "",
+                AutoSize = false,
+                UseMnemonic = false,
+                AutoEllipsis = true,
+                Font = FontMedium(8.2F),
+                ForeColor = clrTextMuted,
+                TextAlign = ContentAlignment.MiddleLeft,
+                BackColor = Color.Transparent,
+                Visible = false
+            };
 
             pnlBottomNav.Resize += (s, e) => LayoutBottomNavButtons();
-            pnlBottomNav.Controls.AddRange(new Control[] { btnTabFeed, btnTabCamera, btnTabExpense });
+            pnlBottomNav.Controls.AddRange(new Control[] { lblSplitModeHint, btnTabFeed, btnTabCamera, btnTabExpense });
 
             pnlMainContainer = new Guna2Panel
             {
@@ -873,7 +1047,13 @@ namespace PocketLog.Client
             this.Controls.Add(pnlHeader);
             this.Controls.Add(pnlBottomNav);
 
+            AttachEdgeResizeRedirector(pnlHeader);
+            AttachEdgeResizeRedirector(pnlBottomNav);
+            AttachEdgeResizeRedirector(pnlMainContainer);
+
             SetupFriendsDrawer();
+            AttachEdgeResizeRedirector(pnlDrawerBackdrop);
+            AttachEdgeResizeRedirector(pnlFriendsDrawer);
             LayoutBottomNavButtons();
         }
 
@@ -885,18 +1065,27 @@ namespace PocketLog.Client
             btnWinClose.Location = new Point(w - 42, 13);
             btnWinMax.Location = new Point(w - 78, 13);
             btnWinMin.Location = new Point(w - 114, 13);
-            btnLogoutTop.Size = new Size(114, 32);
-            btnLogoutTop.Location = new Point(w - 238, 12);
 
-            int minLeft = 144;
+            int logoutW = Math.Max(108, MeasurePillBtnWidth("Đăng xuất", 8.5F, 17));
+            btnLogoutTop.Size = new Size(logoutW, 34);
+            btnLogoutTop.Location = new Point(btnWinMin.Left - logoutW - 8, 11);
+
+            bool hasUser = !string.IsNullOrWhiteSpace(lblHeaderUser?.Text);
+            int minLeft = (lblBrand != null ? lblBrand.Right : 144) + 10;
             int availForChip = btnLogoutTop.Left - minLeft - 8;
-            if (pnlHeaderUserChip.Visible && availForChip >= 72)
+
+            if (hasUser && availForChip >= 68)
             {
-                int desiredTextW = TextRenderer.MeasureText(lblHeaderUser.Text, lblHeaderUser.Font).Width + 40;
-                int chipW = Math.Clamp(desiredTextW, 76, Math.Min(168, availForChip));
-                pnlHeaderUserChip.Location = new Point(btnLogoutTop.Left - chipW - 8, 12);
-                pnlHeaderUserChip.Size = new Size(chipW, 32);
-                lblHeaderUser.Width = Math.Max(36, chipW - 34);
+                int desiredTextW = TextRenderer.MeasureText(lblHeaderUser.Text, lblHeaderUser.Font).Width + 46;
+                int chipW = Math.Clamp(desiredTextW, 68, Math.Min(210, availForChip));
+                pnlHeaderUserChip.Location = new Point(btnLogoutTop.Left - chipW - 8, 11);
+                pnlHeaderUserChip.Size = new Size(chipW, 34);
+                lblHeaderUser.Width = Math.Max(28, chipW - 38);
+                pnlHeaderUserChip.Visible = true;
+            }
+            else
+            {
+                pnlHeaderUserChip.Visible = false;
             }
         }
 
@@ -906,9 +1095,9 @@ namespace PocketLog.Client
             int totalW = pnlBottomNav.ClientSize.Width;
             int totalH = pnlBottomNav.ClientSize.Height;
 
-            int navW = Math.Clamp(totalW - 24, 340, Math.Min(600, MaxColWidth));
-            int startX = Math.Max(12, (totalW - navW) / 2);
-            int gap = 10;
+            int navW = Math.Clamp(totalW - 20, 260, Math.Min(600, MaxColWidth));
+            int startX = Math.Max(10, (totalW - navW) / 2);
+            int gap = totalW < 430 ? 6 : 10;
             int tabW = (navW - gap * 2) / 3;
             int btnH = 48;
             int topY = (totalH - btnH) / 2;
@@ -916,36 +1105,50 @@ namespace PocketLog.Client
             btnTabFeed.SetBounds(startX, topY, tabW, btnH);
             btnTabCamera.SetBounds(startX + tabW + gap, topY, tabW, btnH);
             btnTabExpense.SetBounds(startX + (tabW + gap) * 2, topY, navW - (tabW + gap) * 2, btnH);
+
+            UpdateSplitHintLabel(totalW, totalH, startX);
+        }
+
+        private void UpdateSplitHintLabel(int totalW, int totalH, int navStartX)
+        {
+            if (lblSplitModeHint == null) return;
+            int availLeftW = navStartX - 28;
+            if (IsSplitModeCapable && availLeftW >= 210 && activeTabs.Count > 0)
+            {
+                bool dual = activeTabs.Count >= 2;
+                lblSplitModeHint.Text = dual
+                    ? "● Đang xem 2 mục • Bấm lại mục đang sáng để tắt bớt"
+                    : "● Màn hình rộng: Bấm thêm 1 mục để mở song song";
+                lblSplitModeHint.ForeColor = dual ? clrPrimaryGreen : clrTextMuted;
+                lblSplitModeHint.SetBounds(18, (totalH - 28) / 2, availLeftW, 28);
+                lblSplitModeHint.Visible = true;
+            }
+            else
+            {
+                lblSplitModeHint.Visible = false;
+            }
         }
 
         protected override void WndProc(ref Message m)
         {
-            base.WndProc(ref m);
             const int WM_NCHITTEST = 0x84;
-            const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13,
-                      HTTOPRIGHT = 14, HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
-
             if (m.Msg == WM_NCHITTEST && this.WindowState == FormWindowState.Normal)
             {
-                Point pt = this.PointToClient(Cursor.Position);
-                int grip = 8;
-                int w = this.ClientSize.Width;
-                int h = this.ClientSize.Height;
-
-                if (pt.X <= grip && pt.Y <= grip) m.Result = (IntPtr)HTTOPLEFT;
-                else if (pt.X >= w - grip && pt.Y <= grip) m.Result = (IntPtr)HTTOPRIGHT;
-                else if (pt.X <= grip && pt.Y >= h - grip) m.Result = (IntPtr)HTBOTTOMLEFT;
-                else if (pt.X >= w - grip && pt.Y >= h - grip) m.Result = (IntPtr)HTBOTTOMRIGHT;
-                else if (pt.X <= grip) m.Result = (IntPtr)HTLEFT;
-                else if (pt.X >= w - grip) m.Result = (IntPtr)HTRIGHT;
-                else if (pt.Y <= grip) m.Result = (IntPtr)HTTOP;
-                else if (pt.Y >= h - grip) m.Result = (IntPtr)HTBOTTOM;
+                int lp = m.LParam.ToInt32();
+                Point screenPt = new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF));
+                int hit = GetResizeHitTest(screenPt);
+                if (hit != 0)
+                {
+                    m.Result = (IntPtr)hit;
+                    return;
+                }
             }
+            base.WndProc(ref m);
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            if (activeTabName == "CAMERA" && keyData == (Keys.Control | Keys.V))
+            if (IsTabActive("CAMERA") && keyData == (Keys.Control | Keys.V))
             {
                 if (Clipboard.ContainsImage() || Clipboard.ContainsFileDropList())
                 {
@@ -959,18 +1162,18 @@ namespace PocketLog.Client
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
-        private void UpdateBottomTabIcons(Guna2Button activeBtn)
+        private void UpdateBottomTabIcons()
         {
-            var tabs = new (Guna2Button Btn, UiIcon Icon)[]
+            var tabs = new (string Key, Guna2Button Btn, UiIcon Icon)[]
             {
-                (btnTabFeed, UiIcon.Feed),
-                (btnTabCamera, UiIcon.Camera),
-                (btnTabExpense, UiIcon.Wallet)
+                ("FEED", btnTabFeed, UiIcon.Feed),
+                ("CAMERA", btnTabCamera, UiIcon.Camera),
+                ("EXPENSE", btnTabExpense, UiIcon.Wallet)
             };
 
             foreach (var t in tabs)
             {
-                bool active = (t.Btn == activeBtn);
+                bool active = activeTabs.Contains(t.Key);
                 t.Btn.FillColor = active ? clrPrimaryGreen : Color.Transparent;
                 t.Btn.ForeColor = active ? Color.White : clrIndigo;
                 t.Btn.HoverState.FillColor = active ? clrPrimaryGreen : clrAppBg;
@@ -978,17 +1181,279 @@ namespace PocketLog.Client
                 t.Btn.BorderRadius = 22;
                 AttachBtnIcon(t.Btn, t.Icon, active ? Color.White : clrIndigo, 16);
             }
+
+            if (pnlBottomNav != null && btnTabFeed != null)
+            {
+                UpdateSplitHintLabel(pnlBottomNav.ClientSize.Width, pnlBottomNav.ClientSize.Height, btnTabFeed.Left);
+            }
         }
 
-        private void ActivateMenu(Guna2Button selectedBtn, Control screenContent)
+        private Control CreateContentForTab(string tabKey)
         {
-            if (selectedBtn != btnTabCamera)
+            return tabKey switch
             {
-                StopWebcam();
+                "FEED" => isFeedShowingGallery ? BuildMyGalleryControl() : BuildFeedScreen(),
+                "CAMERA" => BuildCameraScreen(),
+                "EXPENSE" => BuildExpenseScreen(),
+                _ => BuildFeedScreen()
+            };
+        }
+
+        private Panel GetOrCreatePaneHost(string tabKey)
+        {
+            if (paneHosts.TryGetValue(tabKey, out Panel existing) && existing != null && !existing.IsDisposed)
+            {
+                return existing;
             }
 
-            UpdateBottomTabIcons(selectedBtn);
+            var host = new SmoothScrollPanel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = clrAppBg,
+                Margin = Padding.Empty
+            };
+            AttachEdgeResizeRedirector(host);
 
+            Control content = CreateContentForTab(tabKey);
+            content.Dock = DockStyle.Fill;
+            host.Controls.Add(content);
+
+            paneHosts[tabKey] = host;
+            return host;
+        }
+
+        private void DisposeRemovedPaneHosts()
+        {
+            var staleKeys = paneHosts.Keys.Where(k => !activeTabs.Contains(k)).ToList();
+            foreach (string key in staleKeys)
+            {
+                if (key == "CAMERA") StopWebcam();
+                if (paneHosts.TryGetValue(key, out Panel host))
+                {
+                    paneHosts.Remove(key);
+                    try
+                    {
+                        host.Parent?.Controls.Remove(host);
+                        host.Dispose();
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        protected void ClearAllTabPanes()
+        {
+            StopWebcam();
+            activeTabs.Clear();
+            isFeedShowingGallery = false;
+            foreach (var host in paneHosts.Values.ToList())
+            {
+                try
+                {
+                    host.Parent?.Controls.Remove(host);
+                    host.Dispose();
+                }
+                catch { }
+            }
+            paneHosts.Clear();
+            UpdateBottomTabIcons();
+        }
+
+        protected void RenderActiveTabLayout()
+        {
+            if (activeTabs.Count == 0) return;
+            activeTabName = activeTabs[activeTabs.Count - 1];
+
+            pnlMainContainer.SuspendLayout();
+            try
+            {
+                // Tháo các paneHost đang giữ ra khỏi container cũ trước khi Dispose container cũ
+                foreach (var keptHost in paneHosts.Values)
+                {
+                    try { keptHost.Parent?.Controls.Remove(keptHost); } catch { }
+                }
+
+                DisposeRemovedPaneHosts();
+
+                var oldRootControls = pnlMainContainer.Controls.Cast<Control>().ToList();
+                pnlMainContainer.Controls.Clear();
+                foreach (var oldCtrl in oldRootControls)
+                {
+                    if (!paneHosts.Values.Contains(oldCtrl))
+                    {
+                        try { oldCtrl.Dispose(); } catch { }
+                    }
+                }
+
+                if (activeTabs.Count == 1)
+                {
+                    Panel singleHost = GetOrCreatePaneHost(activeTabs[0]);
+                    singleHost.Dock = DockStyle.Fill;
+                    pnlMainContainer.Controls.Add(singleHost);
+                }
+                else
+                {
+                    var splitGrid = new BufferedTableLayout
+                    {
+                        Dock = DockStyle.Fill,
+                        ColumnCount = 3,
+                        RowCount = 1,
+                        BackColor = clrAppBg,
+                        Margin = Padding.Empty,
+                        Padding = Padding.Empty
+                    };
+                    splitGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+                    splitGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 1F));
+                    splitGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+                    splitGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                    AttachEdgeResizeRedirector(splitGrid);
+
+                    Panel leftHost = GetOrCreatePaneHost(activeTabs[0]);
+                    leftHost.Dock = DockStyle.Fill;
+
+                    Panel divider = new Panel
+                    {
+                        Dock = DockStyle.Fill,
+                        Margin = Padding.Empty,
+                        BackColor = clrBorderLight
+                    };
+
+                    Panel rightHost = GetOrCreatePaneHost(activeTabs[1]);
+                    rightHost.Dock = DockStyle.Fill;
+
+                    splitGrid.Controls.Add(leftHost, 0, 0);
+                    splitGrid.Controls.Add(divider, 1, 0);
+                    splitGrid.Controls.Add(rightHost, 2, 0);
+
+                    pnlMainContainer.Controls.Add(splitGrid);
+                }
+
+                UpdateBottomTabIcons();
+            }
+            finally
+            {
+                pnlMainContainer.ResumeLayout(true);
+            }
+        }
+
+        protected void RefreshPaneContent(string tabKey)
+        {
+            if (!paneHosts.TryGetValue(tabKey, out Panel host) || host == null || host.IsDisposed)
+                return;
+
+            if (tabKey == "CAMERA") StopWebcam();
+
+            host.SuspendLayout();
+            try
+            {
+                var oldChildren = host.Controls.Cast<Control>().ToList();
+                host.Controls.Clear();
+                foreach (var oc in oldChildren)
+                {
+                    try { oc.Dispose(); } catch { }
+                }
+
+                Control fresh = CreateContentForTab(tabKey);
+                fresh.Dock = DockStyle.Fill;
+                host.Controls.Add(fresh);
+            }
+            finally
+            {
+                host.ResumeLayout(true);
+            }
+        }
+
+        protected void RefreshDataDrivenPanesOnSync()
+        {
+            if (IsTabActive("FEED"))
+                RefreshPaneContent("FEED");
+            if (IsTabActive("EXPENSE"))
+                RefreshPaneContent("EXPENSE");
+            if (IsTabActive("CAMERA"))
+                refreshCameraFriendsAction?.Invoke();
+        }
+
+        protected void OpenInitialAuthenticatedTab(string tabKey = "FEED")
+        {
+            ClearAllTabPanes();
+            activeTabs.Add(tabKey);
+            activeTabName = tabKey;
+            RenderActiveTabLayout();
+        }
+
+        protected void HandleBottomTabClick(string clickedTab)
+        {
+            if (!IsSplitModeCapable)
+            {
+                if (activeTabs.Count == 1 && activeTabs[0] == clickedTab)
+                {
+                    if (clickedTab == "FEED" && isFeedShowingGallery)
+                    {
+                        isFeedShowingGallery = false;
+                        RefreshPaneContent("FEED");
+                    }
+                    return;
+                }
+
+                activeTabs.Clear();
+                activeTabs.Add(clickedTab);
+                if (clickedTab == "FEED") isFeedShowingGallery = false;
+                RenderActiveTabLayout();
+                return;
+            }
+
+            // Chế độ Full Screen / Màn hình rộng: hỗ trợ bật song song 2 mục và bấm lại để tắt bớt
+            if (activeTabs.Contains(clickedTab))
+            {
+                if (activeTabs.Count >= 2)
+                {
+                    activeTabs.Remove(clickedTab);
+                    RenderActiveTabLayout();
+                }
+                else if (clickedTab == "FEED" && isFeedShowingGallery)
+                {
+                    isFeedShowingGallery = false;
+                    RefreshPaneContent("FEED");
+                }
+                return;
+            }
+
+            if (activeTabs.Count >= 2)
+            {
+                activeTabs.RemoveAt(0);
+            }
+            if (clickedTab == "FEED") isFeedShowingGallery = false;
+            activeTabs.Add(clickedTab);
+            RenderActiveTabLayout();
+        }
+
+        protected void EnsureTabVisible(string tabKey)
+        {
+            if (activeTabs.Contains(tabKey))
+            {
+                activeTabName = tabKey;
+                if (tabKey == "FEED" && isFeedShowingGallery)
+                {
+                    isFeedShowingGallery = false;
+                    RefreshPaneContent("FEED");
+                }
+                UpdateBottomTabIcons();
+                return;
+            }
+            HandleBottomTabClick(tabKey);
+        }
+
+        private void CollapseToSingleMostRecentTab()
+        {
+            if (activeTabs.Count <= 1) return;
+            string keep = activeTabs[activeTabs.Count - 1];
+            activeTabs.Clear();
+            activeTabs.Add(keep);
+            RenderActiveTabLayout();
+        }
+
+        protected void SetMainScreen(Control screenContent)
+        {
             screenContent.Dock = DockStyle.Fill;
             pnlMainContainer.SuspendLayout();
             var oldControls = pnlMainContainer.Controls.Cast<Control>().ToList();

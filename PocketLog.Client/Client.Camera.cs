@@ -21,6 +21,7 @@ namespace PocketLog.Client
         private int selectedCameraIndex = 0;
 
         private Action pasteImageToCameraAction;
+        private Action refreshCameraFriendsAction;
 
         private bool StartWebcam(Guna2PictureBox targetPictureBox, Label lblStatusOverlay)
         {
@@ -52,8 +53,6 @@ namespace PocketLog.Client
                         webcamDevice.VideoResolution = preferredRes;
                     }
                 }
-
-                targetPictureBox.Visible = true;
 
                 webcamDevice.NewFrame += (sender, eventArgs) =>
                 {
@@ -215,29 +214,42 @@ namespace PocketLog.Client
                 Dock = DockStyle.Fill,
                 BorderRadius = 21,
                 SizeMode = PictureBoxSizeMode.Normal,
-                BackColor = Color.Transparent,
-                UseTransparentBackground = true,
-                Visible = true,
+                FillColor = Color.FromArgb(15, 23, 42),
+                BackColor = Color.FromArgb(15, 23, 42),
+                UseTransparentBackground = false,
+                Visible = false,
                 Cursor = Cursors.Hand
             };
 
             Label lblPrompt = new Label
             {
                 Text = "Đang khởi động Camera...\nBạn có thể nhấn Ctrl + V để dán ảnh nhanh",
-                Font = FontMedium(10F),
+                Font = FontMedium(9.8F),
                 ForeColor = Color.FromArgb(226, 232, 240),
-                Size = new Size(w - 36, 56),
-                Location = new Point(18, 140),
+                UseMnemonic = false,
+                Size = new Size(w - 32, 76),
+                Location = new Point(16, 132),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 TextAlign = ContentAlignment.MiddleCenter,
                 BackColor = Color.Transparent,
                 Cursor = Cursors.Hand
             };
 
-            var badgeCamState = MakeBtn("Cam trước", 14, 14, 132, 32, 16, clrPrimaryGreen, Color.White, Color.Transparent, 0, 8.6F);
-            var btnSwitchCam = MakeBtn("Đổi cam", w - 118, 14, 104, 32, 16, Color.FromArgb(51, 65, 85), Color.White, Color.FromArgb(100, 116, 139), 1, 8.6F);
+            int swCamW = Math.Max(122, MeasurePillBtnWidth("Đổi cam", 8.6F, 17, true, 15));
+            var btnSwitchCam = MakeBtn("Đổi cam", w - swCamW - 14, 14, swCamW, 34, 17, Color.FromArgb(51, 65, 85), Color.White, Color.FromArgb(100, 116, 139), 1, 8.6F);
             btnSwitchCam.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             AttachBtnIcon(btnSwitchCam, UiIcon.SwitchCam, Color.White, 15);
+
+            int initCamStateW = Math.Max(136, MeasurePillBtnWidth("Cam trước", 8.6F, 17));
+            var badgeCamState = MakeBtn("Cam trước", 14, 14, initCamStateW, 34, 17, clrPrimaryGreen, Color.White, Color.Transparent, 0, 8.6F);
+
+            Action<string, Color> setCamStateBadge = (txt, bg) =>
+            {
+                badgeCamState.Text = txt;
+                badgeCamState.FillColor = bg;
+                int maxBadgeW = Math.Max(126, pnlViewfinder.Width - swCamW - 42);
+                badgeCamState.Width = Math.Clamp(MeasurePillBtnWidth(txt, 8.6F, 17), 126, maxBadgeW);
+            };
 
             pnlViewfinder.Controls.AddRange(new Control[] { picPreview, lblPrompt, badgeCamState, btnSwitchCam });
             lblPrompt.BringToFront();
@@ -257,14 +269,16 @@ namespace PocketLog.Client
                 picPreview.Image = FitImageCover(uploadedPhoto, Math.Max(320, picPreview.Width), Math.Max(180, picPreview.Height));
                 picPreview.Visible = true;
                 lblPrompt.Visible = false;
+                badgeCamState.BringToFront();
+                btnSwitchCam.BringToFront();
                 oldPreview?.Dispose();
 
-                badgeCamState.Text = statusText;
-                badgeCamState.FillColor = clrPrimaryGreen;
+                setCamStateBadge(statusText, clrPrimaryGreen);
             };
 
             pnlViewfinder.Resize += (s, e) =>
             {
+                setCamStateBadge(badgeCamState.Text, badgeCamState.FillColor);
                 if (!isWebcamStreaming && uploadedPhoto != null && picPreview.Width > 20)
                 {
                     Image old = picPreview.Image;
@@ -283,8 +297,7 @@ namespace PocketLog.Client
                 }
                 else
                 {
-                    badgeCamState.Text = "Chưa có ảnh!";
-                    badgeCamState.FillColor = clrRedDanger;
+                    setCamStateBadge("Chưa có ảnh!", clrRedDanger);
                 }
             };
 
@@ -295,9 +308,9 @@ namespace PocketLog.Client
             menuRestartCam.Click += (s, e) =>
             {
                 uploadedPhoto = null;
+                picPreview.Visible = false;
                 StartWebcam(picPreview, lblPrompt);
-                badgeCamState.Text = selectedCameraIndex == 0 ? "Cam trước" : (selectedCameraIndex == 1 ? "Cam sau" : $"Cam #{selectedCameraIndex + 1}");
-                badgeCamState.FillColor = clrPrimaryGreen;
+                setCamStateBadge(selectedCameraIndex == 0 ? "Cam trước" : (selectedCameraIndex == 1 ? "Cam sau" : $"Cam #{selectedCameraIndex + 1}"), clrPrimaryGreen);
             };
             pnlViewfinder.ContextMenuStrip = ctxMenu;
             picPreview.ContextMenuStrip = ctxMenu;
@@ -305,8 +318,7 @@ namespace PocketLog.Client
             bool started = StartWebcam(picPreview, lblPrompt);
             if (!started)
             {
-                badgeCamState.Text = "Chưa có Cam";
-                badgeCamState.FillColor = clrIndigo;
+                setCamStateBadge("Chưa có Cam", clrIndigo);
             }
 
             btnSwitchCam.Click += (s, e) =>
@@ -317,10 +329,10 @@ namespace PocketLog.Client
                     selectedCameraIndex = (selectedCameraIndex + 1) % devices.Count;
                 }
                 uploadedPhoto = null;
+                picPreview.Visible = false;
                 if (StartWebcam(picPreview, lblPrompt))
                 {
-                    badgeCamState.Text = selectedCameraIndex == 0 ? "Cam trước" : (selectedCameraIndex == 1 ? "Cam sau" : $"Cam #{selectedCameraIndex + 1}");
-                    badgeCamState.FillColor = clrPrimaryGreen;
+                    setCamStateBadge(selectedCameraIndex == 0 ? "Cam trước" : (selectedCameraIndex == 1 ? "Cam sau" : $"Cam #{selectedCameraIndex + 1}"), clrPrimaryGreen);
                 }
             };
 
@@ -338,8 +350,9 @@ namespace PocketLog.Client
                         old?.Dispose();
                         picPreview.Visible = true;
                         lblPrompt.Visible = false;
-                        badgeCamState.Text = "Đã chụp";
-                        badgeCamState.FillColor = clrIndigo;
+                        badgeCamState.BringToFront();
+                        btnSwitchCam.BringToFront();
+                        setCamStateBadge("Đã chụp", clrIndigo);
                     }
                     else
                     {
@@ -350,10 +363,10 @@ namespace PocketLog.Client
                 else
                 {
                     uploadedPhoto = null;
+                    picPreview.Visible = false;
                     if (StartWebcam(picPreview, lblPrompt))
                     {
-                        badgeCamState.Text = selectedCameraIndex == 0 ? "Cam trước" : (selectedCameraIndex == 1 ? "Cam sau" : $"Cam #{selectedCameraIndex + 1}");
-                        badgeCamState.FillColor = clrPrimaryGreen;
+                        setCamStateBadge(selectedCameraIndex == 0 ? "Cam trước" : (selectedCameraIndex == 1 ? "Cam sau" : $"Cam #{selectedCameraIndex + 1}"), clrPrimaryGreen);
                     }
                 }
             };
@@ -370,7 +383,7 @@ namespace PocketLog.Client
                     if (ofd.ShowDialog() == DialogResult.OK)
                     {
                         using var fileImg = Image.FromFile(ofd.FileName);
-                        applyCustomImageToViewfinder(fileImg, "Đã chọn ảnh (Chạm khung mở lại Cam)");
+                        applyCustomImageToViewfinder(fileImg, "Đã chọn ảnh • Chạm mở Cam");
                     }
                 }
             };
@@ -379,24 +392,29 @@ namespace PocketLog.Client
             Panel catHeader = new Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 34),
+                Size = new Size(w, 38),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent
             };
-            catHeader.Controls.Add(MakeLabel("Danh mục chi tiêu", 2, 5, 10.2F, FontStyle.Bold, clrTextMain));
 
-            var btnNoTag = MakeBtn("Không gắn tag", w - 140, 1, 140, 32, 16, clrCardBg, clrIndigo, clrBorderLight, 1, 8.6F);
+            int noTagW = Math.Max(172, MeasurePillBtnWidth("Không gắn tag", 8.6F, 18, true, 14));
+            var btnNoTag = MakeBtn("Không gắn tag", w - noTagW, 1, noTagW, 36, 18, clrCardBg, clrIndigo, clrBorderLight, 1, 8.6F);
             btnNoTag.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             AttachBtnIcon(btnNoTag, UiIcon.Close, clrIndigo, 14);
+
+            var lblCatHeader = MakeLabel("Danh mục chi tiêu", 2, 6, 10.2F, FontStyle.Bold, clrTextMain, Math.Max(100, btnNoTag.Left - 12));
+            lblCatHeader.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            catHeader.Controls.Add(lblCatHeader);
             catHeader.Controls.Add(btnNoTag);
             col.Controls.Add(catHeader);
-            y += 38;
+            y += 42;
 
             // Lưới 3 cột x 2 hàng cân đối cho 6 danh mục
             var catGrid = new BufferedTableLayout
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 86),
+                Size = new Size(w, 92),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ColumnCount = 3,
                 RowCount = 2
@@ -412,8 +430,8 @@ namespace PocketLog.Client
             // Thẻ nhập thông tin chi tiêu & gắn tag bạn bè
             Guna2Panel pnlNoteCard = new Guna2Panel
             {
-                Location = new Point(0, y + 96),
-                Size = new Size(w, 268),
+                Location = new Point(0, y + 102),
+                Size = new Size(w, 274),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 22,
                 FillColor = clrCardBg,
@@ -448,13 +466,13 @@ namespace PocketLog.Client
             rowItemAmt.Controls.Add(txtNoteTop, 0, 0);
             rowItemAmt.Controls.Add(txtAmountNum, 1, 0);
 
-            Label lblTagFriends = MakeLabel("Gắn tag bạn bè chia hóa đơn (Bỏ trống = Cá nhân)", 16, 62, 8.8F, FontStyle.Bold, clrIndigo);
+            Label lblTagFriends = MakeLabel("Gắn tag bạn bè chia hóa đơn (Bỏ trống = Cá nhân)", 16, 63, 8.8F, FontStyle.Bold, clrIndigo, w - 32);
             lblTagFriends.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             Guna2Panel pnlFriendBox = new Guna2Panel
             {
-                Location = new Point(14, 86),
-                Size = new Size(w - 28, 62),
+                Location = new Point(14, 88),
+                Size = new Size(w - 28, 64),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 14,
                 FillColor = clrInputBg,
@@ -474,14 +492,14 @@ namespace PocketLog.Client
             };
             pnlFriendBox.Controls.Add(flowFriends);
 
-            var txtCaption = MakeTextBox("", "Thêm một tin nhắn", 14, 156, w - 28, 42, clrCardBg);
+            var txtCaption = MakeTextBox("", "Thêm một tin nhắn", 14, 160, w - 28, 42, clrCardBg);
             txtCaption.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             // Lưới 3 nút tiện ích đều nhau, không bao giờ xuống dòng mất chữ
             var rowTools = new BufferedTableLayout
             {
-                Location = new Point(12, 206),
-                Size = new Size(w - 24, 46),
+                Location = new Point(12, 210),
+                Size = new Size(w - 24, 48),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ColumnCount = 3,
                 RowCount = 1
@@ -491,23 +509,23 @@ namespace PocketLog.Client
             rowTools.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34F));
             rowTools.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var btnChooseFile = MakeBtn("Chọn ảnh", 0, 0, 100, 42, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
+            var btnChooseFile = MakeBtn("Chọn ảnh", 0, 0, 100, 44, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.5F);
             btnChooseFile.Dock = DockStyle.Fill;
             btnChooseFile.Margin = new Padding(3, 1, 3, 1);
-            AttachBtnIcon(btnChooseFile, UiIcon.Photo, clrPrimaryGreen, 16);
+            AttachBtnIcon(btnChooseFile, UiIcon.Photo, clrPrimaryGreen, 15);
             btnChooseFile.Click += pickImgFromFile;
 
-            var btnPasteImg = MakeBtn("Dán ảnh", 0, 0, 100, 42, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
+            var btnPasteImg = MakeBtn("Dán ảnh", 0, 0, 100, 44, 14, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.5F);
             btnPasteImg.Dock = DockStyle.Fill;
             btnPasteImg.Margin = new Padding(3, 1, 3, 1);
-            AttachBtnIcon(btnPasteImg, UiIcon.Clipboard, clrPrimaryGreen, 16);
+            AttachBtnIcon(btnPasteImg, UiIcon.Clipboard, clrPrimaryGreen, 15);
             uiToolTip.SetToolTip(btnPasteImg, "Dán ảnh từ Clipboard (Phím tắt: Ctrl + V)");
             btnPasteImg.Click += (s, e) => pasteImageToCameraAction();
 
-            var btnAddMoreFriend = MakeBtn("Thêm bạn", 0, 0, 100, 42, 14, clrAppBg, clrIndigo, clrBorderLight, 1, 8.8F);
+            var btnAddMoreFriend = MakeBtn("Thêm bạn", 0, 0, 100, 44, 14, clrAppBg, clrIndigo, clrBorderLight, 1, 8.5F);
             btnAddMoreFriend.Dock = DockStyle.Fill;
             btnAddMoreFriend.Margin = new Padding(3, 1, 3, 1);
-            AttachBtnIcon(btnAddMoreFriend, UiIcon.UserPlus, clrIndigo, 16);
+            AttachBtnIcon(btnAddMoreFriend, UiIcon.UserPlus, clrIndigo, 15);
             btnAddMoreFriend.Click += (s, e) => OpenFriendsDrawer();
 
             rowTools.Controls.Add(btnChooseFile, 0, 0);
@@ -573,49 +591,77 @@ namespace PocketLog.Client
                 }
             };
 
-            if (myFriends.Count == 0)
+            Action populateFriendChips = () =>
             {
-                var btnHintAddFriend = MakeBtn("+ Chưa có bạn bè • Bấm để kết bạn", 4, 4, 260, 30, 15, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.2F);
-                btnHintAddFriend.Margin = new Padding(4, 4, 4, 4);
-                btnHintAddFriend.Click += (s, e) => OpenFriendsDrawer();
-                flowFriends.Controls.Add(btnHintAddFriend);
-            }
-            else
-            {
-                foreach (var f in myFriends)
+                if (flowFriends.IsDisposed) return;
+                taggedFriendNames.RemoveWhere(name => !myFriends.Any(f => f.Name == name));
+
+                var oldChips = flowFriends.Controls.Cast<Control>().ToList();
+                flowFriends.Controls.Clear();
+                foreach (var oc in oldChips) { try { oc.Dispose(); } catch { } }
+
+                if (myFriends.Count == 0)
                 {
-                    int chipW = Math.Max(92, TextRenderer.MeasureText($"+ {f.Name}", FontMedium(8.2F)).Width + 28);
-                    var fBtn = MakeBtn($"+ {f.Name}", 0, 0, chipW, 30, 15, clrCardBg, clrTextMain, clrBorderLight, 1, 8.2F);
-                    fBtn.Margin = new Padding(4, 4, 4, 4);
-                    fBtn.Click += (s, e) =>
-                    {
-                        if (taggedFriendNames.Contains(f.Name))
-                        {
-                            taggedFriendNames.Remove(f.Name);
-                            fBtn.Text = $"+ {f.Name}";
-                            fBtn.FillColor = clrCardBg;
-                            fBtn.ForeColor = clrTextMain;
-                            fBtn.BorderColor = clrBorderLight;
-                        }
-                        else
-                        {
-                            taggedFriendNames.Add(f.Name);
-                            fBtn.Text = $"✓ {f.Name}";
-                            fBtn.FillColor = clrPrimaryGreen;
-                            fBtn.ForeColor = Color.White;
-                            fBtn.BorderColor = clrPrimaryGreen;
-                        }
-                        updatePreview();
-                    };
-                    flowFriends.Controls.Add(fBtn);
+                    string hintTxt = "+ Chưa có bạn bè • Bấm để kết bạn";
+                    int hintW = Math.Max(280, MeasurePillBtnWidth(hintTxt, 8.2F, 16));
+                    var btnHintAddFriend = MakeBtn(hintTxt, 4, 4, hintW, 32, 16, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.2F);
+                    btnHintAddFriend.Margin = new Padding(4, 4, 4, 4);
+                    btnHintAddFriend.Click += (s, e) => OpenFriendsDrawer();
+                    flowFriends.Controls.Add(btnHintAddFriend);
                 }
-            }
+                else
+                {
+                    foreach (var f in myFriends)
+                    {
+                        bool alreadyTagged = taggedFriendNames.Contains(f.Name);
+                        int chipW = Math.Max(98, MeasurePillBtnWidth($"✓ {f.Name}", 8.2F, 16));
+                        var fBtn = MakeBtn(
+                            alreadyTagged ? $"✓ {f.Name}" : $"+ {f.Name}",
+                            0, 0, chipW, 32, 16,
+                            alreadyTagged ? clrPrimaryGreen : clrCardBg,
+                            alreadyTagged ? Color.White : clrTextMain,
+                            alreadyTagged ? clrPrimaryGreen : clrBorderLight,
+                            1, 8.2F);
+                        fBtn.Margin = new Padding(4, 4, 4, 4);
+                        fBtn.Click += (s, e) =>
+                        {
+                            if (taggedFriendNames.Contains(f.Name))
+                            {
+                                taggedFriendNames.Remove(f.Name);
+                                fBtn.Text = $"+ {f.Name}";
+                                fBtn.FillColor = clrCardBg;
+                                fBtn.ForeColor = clrTextMain;
+                                fBtn.BorderColor = clrBorderLight;
+                            }
+                            else
+                            {
+                                taggedFriendNames.Add(f.Name);
+                                fBtn.Text = $"✓ {f.Name}";
+                                fBtn.FillColor = clrPrimaryGreen;
+                                fBtn.ForeColor = Color.White;
+                                fBtn.BorderColor = clrPrimaryGreen;
+                            }
+                            updatePreview();
+                        };
+                        flowFriends.Controls.Add(fBtn);
+                    }
+                }
+                updatePreview();
+            };
+
+            refreshCameraFriendsAction = populateFriendChips;
+            flowFriends.Disposed += (s, e) =>
+            {
+                if (refreshCameraFriendsAction == populateFriendChips)
+                    refreshCameraFriendsAction = null;
+            };
+            populateFriendChips();
 
             for (int i = 0; i < standardCategories.Length; i++)
             {
                 var cat = standardCategories[i];
                 var ico = GetCategoryIcon(cat.Key);
-                var btnCat = MakeBtn(cat.ShortLabel, 0, 0, 110, 38, 16, clrCardBg, clrTextMain, clrBorderLight, 1, 9.2F);
+                var btnCat = MakeBtn(cat.ShortLabel, 0, 0, 110, 40, 16, clrCardBg, clrTextMain, clrBorderLight, 1, 8.6F);
                 btnCat.Dock = DockStyle.Fill;
                 int rightMargin = (i % 3 == 2) ? 0 : 6;
                 btnCat.Margin = new Padding(0, 3, rightMargin, 3);
@@ -668,7 +714,7 @@ namespace PocketLog.Client
 
             col.Controls.Add(catGrid);
             col.Controls.Add(pnlNoteCard);
-            y += 86 + 268 + 16;
+            y += 102 + 274 + 16;
 
             var btnPostPhoto = MakeBtn("Đăng lên Bảng tin Pocket", 0, y, w, 54, 27, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 11F);
             btnPostPhoto.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -719,8 +765,24 @@ namespace PocketLog.Client
                 };
 
                 await SendPacketSafeAsync(TcpPacket.Create(PacketType.CREATE_POST_REQ, postDto));
-                activeTabName = "FEED";
-                ActivateMenu(btnTabFeed, BuildFeedScreen());
+
+                if (IsSplitModeCapable && IsTabActive("FEED"))
+                {
+                    isFeedShowingGallery = false;
+                    RefreshPaneContent("CAMERA");
+                    RefreshPaneContent("FEED");
+                }
+                else if (IsSplitModeCapable && activeTabs.Count >= 2)
+                {
+                    int camIdx = activeTabs.IndexOf("CAMERA");
+                    if (camIdx >= 0) activeTabs[camIdx] = "FEED";
+                    isFeedShowingGallery = false;
+                    RenderActiveTabLayout();
+                }
+                else
+                {
+                    OpenInitialAuthenticatedTab("FEED");
+                }
             };
 
             col.Controls.Add(btnPostPhoto);

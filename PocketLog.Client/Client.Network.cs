@@ -56,8 +56,7 @@ namespace PocketLog.Client
                                     {
                                         UpdateHeaderUserUI(currentFullName);
                                         pnlBottomNav.Visible = true;
-                                        activeTabName = "FEED";
-                                        ActivateMenu(btnTabFeed, BuildFeedScreen());
+                                        OpenInitialAuthenticatedTab("FEED");
                                     }));
 
                                     await SendPacketSafeAsync(TcpPacket.Create(PacketType.SYNC_REQ, currentUserId));
@@ -218,13 +217,10 @@ namespace PocketLog.Client
                 });
             }
 
-            if (activeTabName == "FEED")
-                ActivateMenu(btnTabFeed, BuildFeedScreen());
-            else if (activeTabName == "EXPENSE")
-                ActivateMenu(btnTabExpense, BuildExpenseScreen());
+            RefreshDataDrivenPanesOnSync();
 
             if (pnlDrawerBackdrop.Visible)
-                RenderFriendsDrawerContent("");
+                RenderFriendsDrawerContent(currentFriendsSearchKeyword);
         }
 
         private void CloseCurrentSocket()

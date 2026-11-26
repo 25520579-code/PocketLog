@@ -366,22 +366,25 @@ namespace PocketLog.Server
                         cmdI.ExecuteNonQuery();
                     }
 
-                    if (dto.TaggedFriends != null && dto.TaggedFriends.Count > 0)
+                    if (dto.TaggedFriends != null && dto.TaggedFriends.Count > 0 && dto.Amount > 0)
                     {
                         int share = dto.Amount / (dto.TaggedFriends.Count + 1);
-                        foreach (string friendName in dto.TaggedFriends)
+                        if (share > 0)
                         {
-                            int? debtorId = GetUserIdByName(conn, friendName);
-                            if (debtorId.HasValue && debtorId.Value != dto.AuthorId)
+                            foreach (string friendName in dto.TaggedFriends)
                             {
-                                string insertSplit = @"INSERT INTO SplitBills (PostID, DebtorID, AmountOwed, IsPaid, StatusNote, CreatedAt)
-                                                       VALUES (@pid, @did, @owed, 0, N'Chưa đính kèm ảnh chuyển khoản', GETDATE())";
-                                using (SqlCommand cmdS = new SqlCommand(insertSplit, conn))
+                                int? debtorId = GetUserIdByName(conn, friendName);
+                                if (debtorId.HasValue && debtorId.Value != dto.AuthorId)
                                 {
-                                    cmdS.Parameters.AddWithValue("@pid", newPostId);
-                                    cmdS.Parameters.AddWithValue("@did", debtorId.Value);
-                                    cmdS.Parameters.AddWithValue("@owed", share);
-                                    cmdS.ExecuteNonQuery();
+                                    string insertSplit = @"INSERT INTO SplitBills (PostID, DebtorID, AmountOwed, IsPaid, StatusNote, CreatedAt)
+                                                           VALUES (@pid, @did, @owed, 0, N'Chưa đính kèm ảnh chuyển khoản', GETDATE())";
+                                    using (SqlCommand cmdS = new SqlCommand(insertSplit, conn))
+                                    {
+                                        cmdS.Parameters.AddWithValue("@pid", newPostId);
+                                        cmdS.Parameters.AddWithValue("@did", debtorId.Value);
+                                        cmdS.Parameters.AddWithValue("@owed", share);
+                                        cmdS.ExecuteNonQuery();
+                                    }
                                 }
                             }
                         }
@@ -576,7 +579,10 @@ ELSE
                            WHERE LOWER(FullName) = @n 
                               OR LOWER(REPLACE(FullName, N' (Bạn)', '')) = @n
                               OR LOWER(Username) = @n 
-                              OR LOWER(Username) = @ns";
+                              OR LOWER(Username) = @ns
+                           ORDER BY CASE WHEN LOWER(Username) = @ns THEN 0
+                                         WHEN LOWER(Username) = @n THEN 1
+                                         ELSE 2 END, UserID";
             using (SqlCommand cmd = new SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@n", clean);

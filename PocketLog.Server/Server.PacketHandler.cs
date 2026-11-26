@@ -65,6 +65,8 @@ namespace PocketLog.Server
                 case PacketType.CREATE_POST_REQ:
                     {
                         var postDto = packet.GetPayload<PostDto>();
+                        if (postDto == null) break;
+                        postDto.AuthorId = connectedClients[client];
                         SaveNewPostToSql(postDto);
                         Log($"📸 [{postDto.AuthorName}] vừa đăng ảnh mới: {postDto.NoteTop}");
                         await BroadcastRefreshToAllClientsAsync();
@@ -74,6 +76,8 @@ namespace PocketLog.Server
                 case PacketType.ADD_FRIEND_REQ:
                     {
                         var req = packet.GetPayload<AddFriendRequestDto>();
+                        if (req == null) break;
+                        req.RequesterId = connectedClients[client];
                         var res = AddFriendInSql(req);
                         await SendToClientSafeAsync(client, TcpPacket.Create(PacketType.ADD_FRIEND_RES, res));
 
@@ -88,6 +92,8 @@ namespace PocketLog.Server
                 case PacketType.REMOVE_FRIEND_REQ:
                     {
                         var req = packet.GetPayload<AddFriendRequestDto>();
+                        if (req == null) break;
+                        req.RequesterId = connectedClients[client];
                         var res = RemoveFriendInSql(req);
                         await SendToClientSafeAsync(client, TcpPacket.Create(PacketType.ADD_FRIEND_RES, res));
 
@@ -102,6 +108,8 @@ namespace PocketLog.Server
                 case PacketType.UPLOAD_PROOF_REQ:
                     {
                         var req = packet.GetPayload<UploadProofRequestDto>();
+                        if (req == null) break;
+                        req.UserId = connectedClients[client];
                         SaveProofImageToSql(req);
                         Log($"🧾 Đã nhận ảnh bill chuyển khoản cho khoản chia #{req.SplitId}");
                         await BroadcastRefreshToAllClientsAsync();
@@ -111,6 +119,7 @@ namespace PocketLog.Server
                 case PacketType.VERIFY_BILL_REQ:
                     {
                         var req = packet.GetPayload<VerifyBillRequestDto>();
+                        if (req == null) break;
                         VerifySplitBillInSql(req);
                         Log($"✓ [{req.VerifierName}] đã xác nhận hoàn tất khoản chia #{req.SplitId}");
                         await BroadcastRefreshToAllClientsAsync();
@@ -120,6 +129,8 @@ namespace PocketLog.Server
                 case PacketType.UPDATE_BUDGET_REQ:
                     {
                         var req = packet.GetPayload<UpdateBudgetRequestDto>();
+                        if (req == null) break;
+                        req.UserId = connectedClients[client];
                         UpdateUserBudgetInSql(req);
                         Log($"💰 User#{req.UserId} cập nhật tổng hạn mức: {req.NewMonthlyBudget:N0}đ");
                         var syncData = BuildSyncDataForUser(req.UserId);
@@ -130,6 +141,8 @@ namespace PocketLog.Server
                 case PacketType.UPDATE_CATEGORY_BUDGET_REQ:
                     {
                         var req = packet.GetPayload<UpdateCategoryBudgetRequestDto>();
+                        if (req == null) break;
+                        req.UserId = connectedClients[client];
                         UpdateCategoryBudgetInSql(req);
                         Log($"📊 User#{req.UserId} đặt hạn mức '{req.Category}': {req.NewLimit:N0}đ");
                         var syncData = BuildSyncDataForUser(req.UserId);

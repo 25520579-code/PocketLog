@@ -43,92 +43,168 @@ namespace PocketLog.Server
         private void BuildServerDashboardUI()
         {
             this.Text = "PocketLog TCP Server & SQL Host (Port 8888)";
-            this.Size = new Size(860, 560);
-            this.MinimumSize = new Size(760, 480);
+            var workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1440, 900);
+            int initW = Math.Min(900, Math.Max(640, workArea.Width - 80));
+            int initH = Math.Min(580, Math.Max(420, workArea.Height - 80));
+            this.Size = new Size(initW, initH);
+            this.MinimumSize = new Size(560, 380);
             this.StartPosition = FormStartPosition.CenterScreen;
             this.BackColor = Color.FromArgb(24, 28, 32);
             this.ForeColor = Color.White;
+            this.DoubleBuffered = true;
 
             string localIps = string.Join("  |  ", Dns.GetHostEntry(Dns.GetHostName()).AddressList
                 .Where(ip => ip.AddressFamily == AddressFamily.InterNetwork)
                 .Select(ip => ip.ToString()));
 
-            lblStatus = new Label
+            Panel pnlTop = new Panel
             {
-                Text = "● SERVER ĐANG KHỞI ĐỘNG...",
-                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(46, 204, 113),
-                AutoSize = true,
-                Location = new Point(20, 16)
-            };
-
-            lblIpInfo = new Label
-            {
-                Text = $"IP LAN cho các máy khác kết nối:  {localIps}   (Port: 8888)",
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(241, 196, 15),
-                AutoSize = true,
-                Location = new Point(20, 58)
+                Dock = DockStyle.Top,
+                Size = new Size(this.ClientSize.Width, 88),
+                BackColor = Color.FromArgb(24, 28, 32)
             };
 
             btnToggleServer = new Button
             {
                 Text = "⏹ Dừng Server",
-                Location = new Point(this.ClientSize.Width - 170, 14),
-                Size = new Size(150, 36),
+                Location = new Point(pnlTop.Width - 186, 14),
+                Size = new Size(168, 38),
                 BackColor = Color.FromArgb(192, 57, 43),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 Cursor = Cursors.Hand,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right
+                UseMnemonic = false
             };
+            btnToggleServer.FlatAppearance.BorderSize = 0;
             btnToggleServer.Click += (s, e) =>
             {
                 if (isRunning) StopTcpServer();
                 else StartTcpServer();
             };
 
+            lblStatus = new Label
+            {
+                Text = "● SERVER ĐANG KHỞI ĐỘNG...",
+                Font = new Font("Segoe UI", 11.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(46, 204, 113),
+                AutoSize = false,
+                AutoEllipsis = true,
+                UseMnemonic = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Location = new Point(18, 14),
+                Size = new Size(Math.Max(180, btnToggleServer.Left - 30), 34)
+            };
+
+            lblIpInfo = new Label
+            {
+                Text = $"IP LAN cho các máy khác kết nối:  {localIps}   (Port: 8888)",
+                Font = new Font("Segoe UI", 9.2F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(241, 196, 15),
+                AutoSize = false,
+                AutoEllipsis = true,
+                UseMnemonic = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Location = new Point(18, 54),
+                Size = new Size(Math.Max(200, pnlTop.Width - 36), 28)
+            };
+
+            void LayoutServerTopBar()
+            {
+                int tw = pnlTop.ClientSize.Width;
+                if (tw <= 0) return;
+                btnToggleServer.Location = new Point(tw - 186, 14);
+                lblStatus.SetBounds(18, 14, Math.Max(160, btnToggleServer.Left - 30), 34);
+                lblIpInfo.SetBounds(18, 54, Math.Max(180, tw - 36), 28);
+            }
+            pnlTop.Resize += (s, e) => LayoutServerTopBar();
+
+            ToolTip tip = new ToolTip();
+            tip.SetToolTip(lblIpInfo, lblIpInfo.Text);
+
+            pnlTop.Controls.AddRange(new Control[] { lblStatus, lblIpInfo, btnToggleServer });
+            LayoutServerTopBar();
+
+            Panel pnlBody = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(18, 4, 18, 16),
+                BackColor = Color.FromArgb(24, 28, 32)
+            };
+
+            SplitContainer splitMain = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                SplitterWidth = 10,
+                BackColor = Color.FromArgb(24, 28, 32)
+            };
+
             Label lblOnline = new Label
             {
                 Text = "Các máy Client đang kết nối:",
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                Location = new Point(20, 96),
-                AutoSize = true
+                ForeColor = Color.White,
+                Dock = DockStyle.Top,
+                Height = 28,
+                UseMnemonic = false,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft
             };
 
             lstClients = new ListBox
             {
-                Location = new Point(20, 122),
-                Size = new Size(240, this.ClientSize.Height - 142),
+                Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(34, 40, 46),
                 ForeColor = Color.LightGreen,
                 Font = new Font("Consolas", 9.5F),
                 BorderStyle = BorderStyle.FixedSingle,
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left
+                IntegralHeight = false
             };
+
+            splitMain.Panel1.Controls.Add(lstClients);
+            splitMain.Panel1.Controls.Add(lblOnline);
 
             Label lblLogTitle = new Label
             {
                 Text = "Nhật ký gói tin TCP & Truy vấn SQL Server:",
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                Location = new Point(280, 96),
-                AutoSize = true
+                ForeColor = Color.White,
+                Dock = DockStyle.Top,
+                Height = 28,
+                UseMnemonic = false,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft
             };
 
             rtbLog = new RichTextBox
             {
-                Location = new Point(280, 122),
-                Size = new Size(this.ClientSize.Width - 300, this.ClientSize.Height - 142),
+                Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(16, 20, 24),
                 ForeColor = Color.FromArgb(210, 220, 225),
                 Font = new Font("Consolas", 9F),
                 ReadOnly = true,
-                BorderStyle = BorderStyle.FixedSingle,
-                Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right
+                BorderStyle = BorderStyle.FixedSingle
             };
 
-            this.Controls.AddRange(new Control[] { lblStatus, lblIpInfo, btnToggleServer, lblOnline, lstClients, lblLogTitle, rtbLog });
+            splitMain.Panel2.Controls.Add(rtbLog);
+            splitMain.Panel2.Controls.Add(lblLogTitle);
+
+            pnlBody.Controls.Add(splitMain);
+            this.Controls.Add(pnlBody);
+            this.Controls.Add(pnlTop);
+
+            this.Shown += (s, e) =>
+            {
+                try
+                {
+                    splitMain.Panel1MinSize = 160;
+                    splitMain.Panel2MinSize = 240;
+                    int desired = Math.Clamp((int)(splitMain.Width * 0.30f), 200, Math.Max(200, splitMain.Width - 260));
+                    splitMain.SplitterDistance = desired;
+                }
+                catch { }
+            };
         }
 
         private void Log(string msg)
