@@ -266,10 +266,13 @@ namespace PocketLog.Client
             lblAuthor.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             string subText = BuildPostHeaderSubtitle(post, isMyTopCard);
+            int subY = timePill != null
+                ? Math.Max(lblAuthor.Bottom + 1, timePill.Bottom + 2)
+                : lblAuthor.Bottom - 1;
             var lblSub = MakeLabel(
                 subText,
                 66,
-                lblAuthor.Bottom - 1,
+                subY,
                 8.6F,
                 post.HasTag ? FontStyle.Bold : FontStyle.Regular,
                 post.HasTag ? clrPrimaryGreen : clrTextMuted,
@@ -289,7 +292,11 @@ namespace PocketLog.Client
                 {
                     lblAuthor.Width = Math.Max(80, cw - lblAuthor.Left - 14);
                 }
-                lblSub.Width = Math.Max(80, cw - lblSub.Left - 14);
+                bool overlapsTimePillY = timePill != null && !timePill.IsDisposed &&
+                    lblSub.Top < timePill.Bottom && lblSub.Bottom > timePill.Top;
+                lblSub.Width = overlapsTimePillY
+                    ? Math.Max(80, timePill.Left - lblSub.Left - 8)
+                    : Math.Max(80, cw - lblSub.Left - 14);
             }
 
             int photoY = Math.Max(68, lblSub.Bottom + 6);
@@ -475,7 +482,7 @@ namespace PocketLog.Client
                     BackColor = Color.Transparent,
                     Enabled = false
                 };
-                gradBadge.Disposed += (s, e) => { try { icoPic.Image?.Dispose(); } catch { } };
+                AttachPictureBoxImageDisposal(icoPic);
                 gradBadge.Controls.Add(icoPic);
                 badge = gradBadge;
             }
@@ -483,13 +490,10 @@ namespace PocketLog.Client
             {
                 var softBadge = MakeSoftIconBadge(icon, (width - 46) / 2, 18, 46, 15, clrSoftGreenBg, clrPrimaryGreen);
                 softBadge.Cursor = Cursors.Hand;
-                softBadge.Disposed += (s, e) =>
+                foreach (PictureBox p in softBadge.Controls.OfType<PictureBox>().ToList())
                 {
-                    foreach (PictureBox p in softBadge.Controls.OfType<PictureBox>())
-                    {
-                        try { p.Image?.Dispose(); } catch { }
-                    }
-                };
+                    AttachPictureBoxImageDisposal(p);
+                }
                 badge = softBadge;
             }
 
@@ -515,6 +519,17 @@ namespace PocketLog.Client
 
             card.Controls.AddRange(new Control[] { badge, lbl1, lbl2 });
             return card;
+        }
+
+        private static void AttachPictureBoxImageDisposal(PictureBox pic)
+        {
+            if (pic == null) return;
+            Image capturedImg = pic.Image;
+            pic.Disposed += (s, e) =>
+            {
+                try { pic.Image?.Dispose(); } catch { }
+                try { capturedImg?.Dispose(); } catch { }
+            };
         }
 
         private void OpenMyGalleryScreen()
