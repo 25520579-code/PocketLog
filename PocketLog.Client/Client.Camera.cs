@@ -37,11 +37,10 @@ namespace PocketLog.Client
                     ControlStyles.AllPaintingInWmPaint |
                     ControlStyles.UserPaint |
                     ControlStyles.OptimizedDoubleBuffer |
-                    ControlStyles.ResizeRedraw |
-                    ControlStyles.SupportsTransparentBackColor,
+                    ControlStyles.ResizeRedraw,
                     true);
                 DoubleBuffered = true;
-                BackColor = Color.Transparent;
+                BackColor = fallbackBg;
                 owner?.AttachEdgeResizeRedirector(this);
             }
 
@@ -55,6 +54,12 @@ namespace PocketLog.Client
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
+                // Fill full dock bounds first so pixels outside the 21px bottom corner arcs are initialized in BufferedGraphics
+                using (var cornerBrush = new SolidBrush(fallbackBg))
+                {
+                    g.FillRectangle(cornerBrush, 0, 0, w, h);
+                }
+
                 using GraphicsPath clipPath = CreateBottomRoundedPath(w, h, 21f);
                 GraphicsState saved = g.Save();
                 g.SetClip(clipPath);
@@ -64,11 +69,6 @@ namespace PocketLog.Client
                     int pw = Math.Max(1, previewBox.Width);
                     int ph = Math.Max(1, previewBox.Height);
                     g.DrawImage(previewBox.Image, new Rectangle(0, -(ph - h), pw, ph));
-                }
-                else
-                {
-                    using var baseBrush = new SolidBrush(fallbackBg);
-                    g.FillRectangle(baseBrush, 0, 0, w, h);
                 }
 
                 using (var glassBrush = new LinearGradientBrush(
@@ -98,6 +98,31 @@ namespace PocketLog.Client
                 path.AddArc(0f, h - d, d, d, 90f, 90f);
                 path.CloseFigure();
                 return path;
+            }
+        }
+
+        private static void InvalidateControlTree(Control root)
+        {
+            if (root == null || root.IsDisposed) return;
+            root.Invalidate();
+            foreach (Control child in root.Controls)
+            {
+                if (!child.IsDisposed && child.Visible)
+                {
+                    InvalidateControlTree(child);
+                }
+            }
+        }
+
+        private static void InvalidateViewfinderChildren(Guna2PictureBox targetPictureBox)
+        {
+            if (targetPictureBox == null || targetPictureBox.IsDisposed) return;
+            foreach (Control child in targetPictureBox.Controls)
+            {
+                if (!child.IsDisposed && child.Visible)
+                {
+                    InvalidateControlTree(child);
+                }
             }
         }
 
@@ -162,14 +187,7 @@ namespace PocketLog.Client
                                     targetPictureBox.Image = frameForUi;
                                     targetPictureBox.Visible = true;
                                     lblStatusOverlay.Visible = false;
-                                    foreach (Control child in targetPictureBox.Controls)
-                                    {
-                                        if (child is CameraBottomDockPanel)
-                                        {
-                                            child.Invalidate();
-                                            break;
-                                        }
-                                    }
+                                    InvalidateViewfinderChildren(targetPictureBox);
                                     oldImg?.Dispose();
                                 }
                                 else
@@ -445,10 +463,9 @@ namespace PocketLog.Client
                 lblPrompt.Visible = false;
                 shutterBtn.IsCapturedMode = true;
 
-                pnlCameraDock.Invalidate();
                 oldPreview?.Dispose();
-
                 setCamStateBadge(statusText, theme.AccentPrimary);
+                InvalidateControlTree(picPreview);
             };
 
             Action restartLiveWebcam = () =>
@@ -461,7 +478,6 @@ namespace PocketLog.Client
                 oldPreview?.Dispose();
 
                 shutterBtn.IsCapturedMode = false;
-                pnlCameraDock.Invalidate();
 
                 if (StartWebcam(picPreview, lblPrompt))
                 {
@@ -471,6 +487,7 @@ namespace PocketLog.Client
                 {
                     setCamStateBadge("Chưa có Cam", noCamBadgeColor);
                 }
+                InvalidateControlTree(picPreview);
             };
 
             pnlViewfinder.Resize += (s, e) =>
@@ -481,8 +498,8 @@ namespace PocketLog.Client
                     Image old = picPreview.Image;
                     picPreview.Image = FitImageCover(uploadedPhoto, picPreview.Width, picPreview.Height);
                     old?.Dispose();
-                    pnlCameraDock.Invalidate();
                 }
+                InvalidateControlTree(picPreview);
             };
 
             Action localPasteAction = () =>
@@ -546,8 +563,8 @@ namespace PocketLog.Client
                         pnlCameraDock.BringToFront();
                         badgeCamState.BringToFront();
                         btnSwitchCam.BringToFront();
-                        pnlCameraDock.Invalidate();
                         setCamStateBadge("Đã chụp", theme.AccentPrimary);
+                        InvalidateControlTree(picPreview);
                     }
                     else
                     {
@@ -555,6 +572,7 @@ namespace PocketLog.Client
                         lblPrompt.Visible = true;
                         shutterBtn.IsCapturedMode = false;
                         setCamStateBadge("Chưa có Cam", noCamBadgeColor);
+                        InvalidateControlTree(picPreview);
                     }
                 }
                 else
