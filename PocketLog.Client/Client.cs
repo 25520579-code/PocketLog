@@ -38,15 +38,20 @@ namespace PocketLog.Client
             Brand, Feed, Camera, Wallet, Photo, Users, UserPlus,
             Send, Clipboard, SwitchCam, Close, Check, Upload,
             Tag, Receipt, Food, Fuel, Shirt, Home, Cart, Book,
-            ChevronDown, ChevronUp, ChevronLeft
+            ChevronDown, ChevronUp, ChevronLeft,
+            Moon, Sun, Eye, EyeOff
         }
 
         private Guna2BorderlessForm borderlessForm;
         private Guna2Panel pnlHeader, pnlMainContainer, pnlBottomNav;
+        private Panel pnlHeaderDivider;
+        private Guna2GradientPanel pnlLogoBadge;
+        private PictureBox picLogoIcon;
         private Guna2Panel pnlHeaderUserChip;
         private Guna2CircleButton avtHeaderUser;
-        private Guna2Button btnTabFeed, btnTabCamera, btnTabExpense, btnLogoutTop;
+        private Guna2Button btnTabFeed, btnTabCamera, btnTabExpense, btnLogoutTop, btnThemeToggle;
         private Label lblHeaderUser;
+        private int currentUnpaidBadgeCount = 0;
         private readonly ToolTip uiToolTip = new ToolTip();
 
         private Panel pnlDrawerBackdrop;
@@ -69,20 +74,21 @@ namespace PocketLog.Client
         private string currentUsername = "";
         private string currentFullName = "";
 
-        // Giữ nguyên bảng màu chủ đạo Sky Blue & Slate Grey, tinh chỉnh sắc độ viền mềm mại hơn
-        private readonly Color clrAppBg = Color.FromArgb(241, 245, 249);
-        private readonly Color clrCardBg = Color.FromArgb(255, 255, 255);
-        private readonly Color clrInputBg = Color.FromArgb(248, 250, 252);
-        private readonly Color clrPrimaryGreen = Color.FromArgb(56, 130, 246);
-        private readonly Color clrSoftGreenBg = Color.FromArgb(224, 242, 254);
-        private readonly Color clrSoftGreenBorder = Color.FromArgb(147, 197, 253);
-        private readonly Color clrIndigo = Color.FromArgb(71, 85, 105);
-        private readonly Color clrSoftIndigo = Color.FromArgb(226, 232, 240);
-        private readonly Color clrRedDanger = Color.FromArgb(225, 29, 72);
-        private readonly Color clrSoftRedBg = Color.FromArgb(255, 228, 230);
-        private readonly Color clrBorderLight = Color.FromArgb(226, 232, 240);
-        private readonly Color clrTextMain = Color.FromArgb(30, 41, 59);
-        private readonly Color clrTextMuted = Color.FromArgb(100, 116, 139);
+        // Bảng màu động theo Light / Dark theme (đồng bộ qua ApplyThemeColors)
+        private Color clrAppBg = Color.FromArgb(244, 246, 251);
+        private Color clrCardBg = Color.FromArgb(255, 255, 255);
+        private Color clrInputBg = Color.FromArgb(238, 242, 249);
+        private Color clrPrimaryGreen = Color.FromArgb(79, 70, 229);
+        private Color clrAccentSecondary = Color.FromArgb(14, 165, 233);
+        private Color clrSoftGreenBg = Color.FromArgb(238, 242, 255);
+        private Color clrSoftGreenBorder = Color.FromArgb(199, 210, 254);
+        private Color clrIndigo = Color.FromArgb(51, 65, 85);
+        private Color clrSoftIndigo = Color.FromArgb(226, 232, 244);
+        private Color clrRedDanger = Color.FromArgb(244, 63, 94);
+        private Color clrSoftRedBg = Color.FromArgb(255, 228, 235);
+        private Color clrBorderLight = Color.FromArgb(226, 232, 244);
+        private Color clrTextMain = Color.FromArgb(15, 23, 42);
+        private Color clrTextMuted = Color.FromArgb(100, 116, 139);
 
         private static readonly string SemiBoldFamilyName = ResolveSemiBoldFamily();
 
@@ -168,6 +174,8 @@ namespace PocketLog.Client
         {
             InitializeComponent();
             this.DoubleBuffered = true;
+            LoadThemePreference();
+            ApplyThemeColors();
             InitializeDefaultBudgets();
             SetupPhoneShell();
             ShowAuthScreen();
@@ -378,8 +386,11 @@ namespace PocketLog.Client
                 {
                     case UiIcon.Brand:
                         FillRoundedRect(g, b, s * 0.14f, s * 0.22f, s * 0.72f, s * 0.58f, s * 0.2f);
-                        using (SolidBrush hole = new SolidBrush(clrCardBg))
+                        var prevMode = g.CompositingMode;
+                        g.CompositingMode = CompositingMode.SourceCopy;
+                        using (SolidBrush hole = new SolidBrush(Color.Transparent))
                             g.FillEllipse(hole, s * 0.35f, s * 0.36f, s * 0.30f, s * 0.30f);
+                        g.CompositingMode = prevMode;
                         break;
 
                     case UiIcon.Feed:
@@ -567,6 +578,68 @@ namespace PocketLog.Client
                         g.DrawLines(p, new[] { new PointF(s * 0.62f, s * 0.22f), new PointF(s * 0.34f, s * 0.50f), new PointF(s * 0.62f, s * 0.78f) });
                         break;
 
+                    case UiIcon.Moon:
+                        using (GraphicsPath moonPath = new GraphicsPath())
+                        {
+                            moonPath.AddArc(s * 0.14f, s * 0.14f, s * 0.72f, s * 0.72f, 268.8f, -267.6f);
+                            moonPath.AddArc(s * 0.42f, s * 0.06f, s * 0.52f, s * 0.52f, 46.2f, 177.6f);
+                            moonPath.CloseFigure();
+                            g.DrawPath(p, moonPath);
+                        }
+                        break;
+
+                    case UiIcon.Sun:
+                        g.DrawEllipse(p, s * 0.32f, s * 0.32f, s * 0.36f, s * 0.36f);
+                        for (int i = 0; i < 8; i++)
+                        {
+                            double ang = i * Math.PI / 4.0;
+                            float cos = (float)Math.Cos(ang);
+                            float sin = (float)Math.Sin(ang);
+                            g.DrawLine(p,
+                                s * (0.50f + 0.29f * cos), s * (0.50f + 0.29f * sin),
+                                s * (0.50f + 0.39f * cos), s * (0.50f + 0.39f * sin));
+                        }
+                        break;
+
+                    case UiIcon.Eye:
+                        using (GraphicsPath eyePath = new GraphicsPath())
+                        {
+                            eyePath.AddBezier(
+                                new PointF(s * 0.12f, s * 0.50f),
+                                new PointF(s * 0.30f, s * 0.22f),
+                                new PointF(s * 0.70f, s * 0.22f),
+                                new PointF(s * 0.88f, s * 0.50f));
+                            eyePath.AddBezier(
+                                new PointF(s * 0.88f, s * 0.50f),
+                                new PointF(s * 0.70f, s * 0.78f),
+                                new PointF(s * 0.30f, s * 0.78f),
+                                new PointF(s * 0.12f, s * 0.50f));
+                            eyePath.CloseFigure();
+                            g.DrawPath(p, eyePath);
+                        }
+                        g.DrawEllipse(p, s * 0.39f, s * 0.39f, s * 0.22f, s * 0.22f);
+                        break;
+
+                    case UiIcon.EyeOff:
+                        using (GraphicsPath eyeOffPath = new GraphicsPath())
+                        {
+                            eyeOffPath.AddBezier(
+                                new PointF(s * 0.12f, s * 0.50f),
+                                new PointF(s * 0.30f, s * 0.22f),
+                                new PointF(s * 0.70f, s * 0.22f),
+                                new PointF(s * 0.88f, s * 0.50f));
+                            eyeOffPath.AddBezier(
+                                new PointF(s * 0.88f, s * 0.50f),
+                                new PointF(s * 0.70f, s * 0.78f),
+                                new PointF(s * 0.30f, s * 0.78f),
+                                new PointF(s * 0.12f, s * 0.50f));
+                            eyeOffPath.CloseFigure();
+                            g.DrawPath(p, eyeOffPath);
+                        }
+                        g.DrawEllipse(p, s * 0.39f, s * 0.39f, s * 0.22f, s * 0.22f);
+                        g.DrawLine(p, s * 0.18f, s * 0.18f, s * 0.82f, s * 0.82f);
+                        break;
+
                     default:
                         g.DrawPolygon(p, new[]
                         {
@@ -716,7 +789,7 @@ namespace PocketLog.Client
             {
                 Text = text,
                 PlaceholderText = placeholder,
-                PlaceholderForeColor = Color.FromArgb(148, 163, 184),
+                PlaceholderForeColor = clrTextMuted,
                 Location = new Point(x, y),
                 Size = new Size(w, h),
                 BorderRadius = 12,
@@ -729,7 +802,7 @@ namespace PocketLog.Client
             };
             tb.HoverState.BorderColor = clrSoftGreenBorder;
             tb.FocusedState.BorderColor = clrPrimaryGreen;
-            tb.FocusedState.FillColor = Color.White;
+            tb.FocusedState.FillColor = clrCardBg;
             return tb;
         }
 
@@ -839,7 +912,7 @@ namespace PocketLog.Client
             this.MinimumSize = new Size(445, 580);
             this.MaximizedBounds = workArea;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.BackColor = clrBorderLight;
+            this.BackColor = CurrentTheme.BorderWindow;
             this.Padding = new Padding(3);
             this.ResizeRedraw = true;
 
@@ -872,6 +945,7 @@ namespace PocketLog.Client
                     CollapseToSingleMostRecentTab();
                 }
 
+                LayoutHeaderControls();
                 LayoutBottomNavButtons();
 
                 if (pnlDrawerBackdrop != null && pnlMainContainer != null && pnlDrawerBackdrop.Visible)
@@ -883,34 +957,56 @@ namespace PocketLog.Client
             pnlHeader = new Guna2Panel
             {
                 Dock = DockStyle.Top,
-                Height = 56,
+                Height = 58,
                 FillColor = clrCardBg,
                 UseTransparentBackground = true
             };
-            pnlHeader.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = clrBorderLight });
+            pnlHeaderDivider = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = clrBorderLight };
+            pnlHeader.Controls.Add(pnlHeaderDivider);
 
-            var logoBadge = MakeSoftIconBadge(UiIcon.Brand, 14, 13, 30, 10, clrSoftGreenBg, clrPrimaryGreen);
+            pnlLogoBadge = new Guna2GradientPanel
+            {
+                Location = new Point(14, 13),
+                Size = new Size(32, 32),
+                BorderRadius = 10,
+                FillColor = CurrentTheme.AccentPrimary,
+                FillColor2 = CurrentTheme.AccentSecondary,
+                GradientMode = LinearGradientMode.ForwardDiagonal,
+                BackColor = Color.Transparent,
+                UseTransparentBackground = true
+            };
+            picLogoIcon = new PictureBox
+            {
+                Size = new Size(18, 18),
+                Location = new Point(7, 7),
+                Image = CreateVectorIcon(UiIcon.Brand, Color.White, 18),
+                SizeMode = PictureBoxSizeMode.CenterImage,
+                BackColor = Color.Transparent,
+                Enabled = false
+            };
+            pnlLogoBadge.Controls.Add(picLogoIcon);
+
             lblBrand = new Label
             {
                 Text = "PocketLog",
-                Location = new Point(50, 15),
+                Location = new Point(54, 17),
                 AutoSize = true,
                 UseMnemonic = false,
                 Font = FontBold(11.2F),
-                ForeColor = clrPrimaryGreen,
+                ForeColor = clrTextMain,
                 BackColor = Color.Transparent
             };
-            pnlHeader.Controls.Add(logoBadge);
+            pnlHeader.Controls.Add(pnlLogoBadge);
             pnlHeader.Controls.Add(lblBrand);
 
             pnlHeader.MouseDown += BeginDragWindowFromHeader;
-            logoBadge.MouseDown += BeginDragWindowFromHeader;
+            pnlLogoBadge.MouseDown += BeginDragWindowFromHeader;
             lblBrand.MouseDown += BeginDragWindowFromHeader;
 
             // Chip tài khoản mềm mại thay cho ký tự 👤 bị cắt góc
             pnlHeaderUserChip = new Guna2Panel
             {
-                Location = new Point(150, 11),
+                Location = new Point(150, 12),
                 Size = new Size(132, 34),
                 BorderRadius = 17,
                 FillColor = clrSoftGreenBg,
@@ -924,11 +1020,29 @@ namespace PocketLog.Client
                 Size = new Size(26, 26),
                 Location = new Point(4, 4),
                 FillColor = clrPrimaryGreen,
-                ForeColor = Color.White,
-                Font = FontMedium(8F),
+                ForeColor = clrPrimaryGreen,
+                Font = FontBold(8F),
+                Padding = Padding.Empty,
+                TextOffset = Point.Empty,
                 UseTransparentBackground = true,
                 BackColor = Color.Transparent,
-                Enabled = false
+                TabStop = false,
+                Cursor = Cursors.Default
+            };
+            avtHeaderUser.HoverState.FillColor = clrPrimaryGreen;
+            avtHeaderUser.DisabledState.FillColor = clrPrimaryGreen;
+            avtHeaderUser.DisabledState.ForeColor = clrPrimaryGreen;
+            avtHeaderUser.Paint += (s, e) =>
+            {
+                if (string.IsNullOrEmpty(avtHeaderUser.Text)) return;
+                using Font f = FontBold(8.2F);
+                TextRenderer.DrawText(
+                    e.Graphics,
+                    avtHeaderUser.Text,
+                    f,
+                    new Rectangle(0, 0, avtHeaderUser.Width, avtHeaderUser.Height),
+                    Color.White,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
             };
             lblHeaderUser = new Label
             {
@@ -946,13 +1060,20 @@ namespace PocketLog.Client
             pnlHeaderUserChip.Controls.Add(lblHeaderUser);
             pnlHeader.Controls.Add(pnlHeaderUserChip);
 
-            int logoutW = Math.Max(108, MeasurePillBtnWidth("Đăng xuất", 8.5F, 17));
-            btnLogoutTop = MakeBtn("Đăng xuất", 268, 11, logoutW, 34, 17, clrAppBg, clrIndigo, Color.Transparent, 0, 8.5F);
+            int logoutW = Math.Max(96, MeasurePillBtnWidth("Đăng xuất", 8.5F, 17));
+            btnLogoutTop = MakeBtn("Đăng xuất", 268, 12, logoutW, 34, 17, clrAppBg, clrIndigo, Color.Transparent, 0, 8.5F);
             btnLogoutTop.HoverState.FillColor = clrSoftRedBg;
             btnLogoutTop.HoverState.ForeColor = clrRedDanger;
             btnLogoutTop.Visible = false;
             btnLogoutTop.Click += (s, e) => DisconnectAndLogout();
             pnlHeader.Controls.Add(btnLogoutTop);
+
+            btnThemeToggle = MakeBtn("", 320, 12, 34, 34, 17, clrAppBg, clrIndigo, clrBorderLight, 1, 8.5F);
+            btnThemeToggle.ImageAlign = HorizontalAlignment.Center;
+            btnThemeToggle.ImageOffset = Point.Empty;
+            btnThemeToggle.TextOffset = Point.Empty;
+            btnThemeToggle.Click += (s, e) => ToggleThemeMode();
+            pnlHeader.Controls.Add(btnThemeToggle);
 
             btnWinMin = new Guna2ControlBox
             {
@@ -960,7 +1081,7 @@ namespace PocketLog.Client
                 Size = new Size(32, 30),
                 FillColor = clrAppBg,
                 IconColor = clrTextMain,
-                BorderRadius = 9,
+                BorderRadius = 10,
                 UseTransparentBackground = true
             };
             btnWinMax = new Guna2ControlBox
@@ -969,7 +1090,7 @@ namespace PocketLog.Client
                 Size = new Size(32, 30),
                 FillColor = clrAppBg,
                 IconColor = clrTextMain,
-                BorderRadius = 9,
+                BorderRadius = 10,
                 UseTransparentBackground = true
             };
             btnWinClose = new Guna2ControlBox
@@ -977,7 +1098,7 @@ namespace PocketLog.Client
                 Size = new Size(32, 30),
                 FillColor = clrAppBg,
                 IconColor = clrTextMain,
-                BorderRadius = 9,
+                BorderRadius = 10,
                 UseTransparentBackground = true,
                 HoverState = { FillColor = clrRedDanger, IconColor = Color.White }
             };
@@ -1001,24 +1122,26 @@ namespace PocketLog.Client
             pnlHeader.Controls.AddRange(new Control[] { btnWinMin, btnWinMax, btnWinClose });
             LayoutHeaderControls();
 
-            // Thanh điều hướng đáy phong cách Android Material / Locket
+            // Thanh điều hướng đáy nổi (Floating Capsule) phong cách Android Modern
             pnlBottomNav = new Guna2Panel
             {
                 Dock = DockStyle.Bottom,
-                Height = 72,
-                FillColor = clrCardBg,
+                Height = 82,
+                FillColor = clrAppBg,
+                BackColor = clrAppBg,
                 Visible = false,
-                UseTransparentBackground = true
+                UseTransparentBackground = false
             };
-            pnlBottomNav.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, BackColor = clrBorderLight });
+            pnlBottomNav.Paint += PaintFloatingBottomNavCapsule;
 
-            btnTabFeed = MakeBtn("Bảng tin", 14, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
-            btnTabCamera = MakeBtn("Chụp ảnh", 136, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
-            btnTabExpense = MakeBtn("Chi tiêu", 258, 12, 114, 48, 24, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabFeed = MakeBtn("Bảng tin", 14, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabCamera = MakeBtn("Chụp ảnh", 136, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabExpense = MakeBtn("Chi tiêu", 258, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
 
             btnTabFeed.Click += (s, e) => HandleBottomTabClick("FEED");
             btnTabCamera.Click += (s, e) => HandleBottomTabClick("CAMERA");
             btnTabExpense.Click += (s, e) => HandleBottomTabClick("EXPENSE");
+            btnTabExpense.Paint += PaintExpenseTabBadge;
 
             lblSplitModeHint = new Label
             {
@@ -1048,13 +1171,22 @@ namespace PocketLog.Client
             this.Controls.Add(pnlBottomNav);
 
             AttachEdgeResizeRedirector(pnlHeader);
+            AttachEdgeResizeRedirector(pnlLogoBadge);
+            AttachEdgeResizeRedirector(btnThemeToggle);
+            AttachEdgeResizeRedirector(btnLogoutTop);
+            AttachEdgeResizeRedirector(pnlHeaderUserChip);
             AttachEdgeResizeRedirector(pnlBottomNav);
+            AttachEdgeResizeRedirector(btnTabFeed);
+            AttachEdgeResizeRedirector(btnTabCamera);
+            AttachEdgeResizeRedirector(btnTabExpense);
+            AttachEdgeResizeRedirector(lblSplitModeHint);
             AttachEdgeResizeRedirector(pnlMainContainer);
 
             SetupFriendsDrawer();
             AttachEdgeResizeRedirector(pnlDrawerBackdrop);
             AttachEdgeResizeRedirector(pnlFriendsDrawer);
             LayoutBottomNavButtons();
+            ApplyShellTheme();
         }
 
         private void LayoutHeaderControls()
@@ -1062,23 +1194,39 @@ namespace PocketLog.Client
             if (pnlHeader == null || btnWinClose == null) return;
             int w = pnlHeader.ClientSize.Width;
 
-            btnWinClose.Location = new Point(w - 42, 13);
-            btnWinMax.Location = new Point(w - 78, 13);
-            btnWinMin.Location = new Point(w - 114, 13);
+            btnWinClose.Location = new Point(w - 40, 14);
+            btnWinMax.Location = new Point(w - 74, 14);
+            btnWinMin.Location = new Point(w - 108, 14);
 
-            int logoutW = Math.Max(108, MeasurePillBtnWidth("Đăng xuất", 8.5F, 17));
+            if (btnThemeToggle != null)
+            {
+                btnThemeToggle.Size = new Size(34, 34);
+                btnThemeToggle.Location = new Point(btnWinMin.Left - 40, 12);
+            }
+
+            if (lblBrand != null)
+            {
+                lblBrand.Top = Math.Max(10, (pnlHeader.Height - lblBrand.Height) / 2);
+            }
+
+            int rightAnchorForAuth = btnThemeToggle != null ? btnThemeToggle.Left : btnWinMin.Left;
+            int minLeft = (lblBrand != null ? lblBrand.Right : 144) + 10;
+
+            int desiredLogoutW = Math.Max(96, MeasurePillBtnWidth("Đăng xuất", 8.5F, 17));
+            int maxLogoutW = Math.Max(74, rightAnchorForAuth - minLeft - 6);
+            int logoutW = Math.Min(desiredLogoutW, maxLogoutW);
             btnLogoutTop.Size = new Size(logoutW, 34);
-            btnLogoutTop.Location = new Point(btnWinMin.Left - logoutW - 8, 11);
+            btnLogoutTop.Location = new Point(rightAnchorForAuth - logoutW - 6, 12);
 
             bool hasUser = !string.IsNullOrWhiteSpace(lblHeaderUser?.Text);
-            int minLeft = (lblBrand != null ? lblBrand.Right : 144) + 10;
-            int availForChip = btnLogoutTop.Left - minLeft - 8;
+            int chipRightAnchor = btnLogoutTop.Visible ? btnLogoutTop.Left : rightAnchorForAuth;
+            int availForChip = chipRightAnchor - minLeft - 8;
 
-            if (hasUser && availForChip >= 68)
+            if (hasUser && this.Width >= 510 && availForChip >= 68)
             {
                 int desiredTextW = TextRenderer.MeasureText(lblHeaderUser.Text, lblHeaderUser.Font).Width + 46;
                 int chipW = Math.Clamp(desiredTextW, 68, Math.Min(210, availForChip));
-                pnlHeaderUserChip.Location = new Point(btnLogoutTop.Left - chipW - 8, 11);
+                pnlHeaderUserChip.Location = new Point(chipRightAnchor - chipW - 8, 12);
                 pnlHeaderUserChip.Size = new Size(chipW, 34);
                 lblHeaderUser.Width = Math.Max(28, chipW - 38);
                 pnlHeaderUserChip.Visible = true;
@@ -1095,18 +1243,97 @@ namespace PocketLog.Client
             int totalW = pnlBottomNav.ClientSize.Width;
             int totalH = pnlBottomNav.ClientSize.Height;
 
-            int navW = Math.Clamp(totalW - 20, 260, Math.Min(600, MaxColWidth));
-            int startX = Math.Max(10, (totalW - navW) / 2);
+            int navW = Math.Clamp(totalW - 32, 240, Math.Min(600, MaxColWidth));
+            int startX = Math.Max(16, (totalW - navW) / 2);
             int gap = totalW < 430 ? 6 : 10;
             int tabW = (navW - gap * 2) / 3;
             int btnH = 48;
-            int topY = (totalH - btnH) / 2;
+            int topY = (totalH - btnH) / 2 - 1;
 
             btnTabFeed.SetBounds(startX, topY, tabW, btnH);
             btnTabCamera.SetBounds(startX + tabW + gap, topY, tabW, btnH);
             btnTabExpense.SetBounds(startX + (tabW + gap) * 2, topY, navW - (tabW + gap) * 2, btnH);
 
-            UpdateSplitHintLabel(totalW, totalH, startX);
+            UpdateSplitHintLabel(totalW, totalH, startX - 6);
+            pnlBottomNav.Invalidate();
+        }
+
+        private void PaintFloatingBottomNavCapsule(object sender, PaintEventArgs e)
+        {
+            if (pnlBottomNav == null || pnlBottomNav.IsDisposed || btnTabFeed == null || btnTabExpense == null)
+                return;
+            if (btnTabFeed.Width <= 0 || btnTabExpense.Width <= 0)
+                return;
+
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            var capRect = new RectangleF(
+                btnTabFeed.Left - 6f,
+                btnTabFeed.Top - 6f,
+                (btnTabExpense.Right - btnTabFeed.Left) + 12f,
+                btnTabFeed.Height + 12f);
+            float radius = 28f;
+
+            AppPalette p = CurrentTheme ?? LightPalette;
+            Color shadowColor = isDarkMode ? Color.Black : Color.FromArgb(15, 23, 42);
+            int outerAlpha = isDarkMode ? 24 : 8;
+            int innerAlpha = isDarkMode ? 40 : 16;
+
+            using (var shadowPath2 = CreateRoundedPath(capRect.X - 2f, capRect.Y + 3f, capRect.Width + 4f, capRect.Height + 4f, radius + 2f))
+            using (var shadowBrush2 = new SolidBrush(Color.FromArgb(outerAlpha, shadowColor)))
+                g.FillPath(shadowBrush2, shadowPath2);
+
+            using (var shadowPath1 = CreateRoundedPath(capRect.X - 0.5f, capRect.Y + 2f, capRect.Width + 1f, capRect.Height + 1.5f, radius + 0.5f))
+            using (var shadowBrush1 = new SolidBrush(Color.FromArgb(innerAlpha, shadowColor)))
+                g.FillPath(shadowBrush1, shadowPath1);
+
+            using (var capPath = CreateRoundedPath(capRect.X, capRect.Y, capRect.Width, capRect.Height, radius))
+            using (var capBrush = new SolidBrush(p.FloatingNavBg))
+            using (var capPen = new Pen(p.BorderLight, 1f))
+            {
+                g.FillPath(capBrush, capPath);
+                g.DrawPath(capPen, capPath);
+            }
+        }
+
+        private void PaintExpenseTabBadge(object sender, PaintEventArgs e)
+        {
+            if (currentUnpaidBadgeCount <= 0 || btnTabExpense == null || btnTabExpense.IsDisposed)
+                return;
+
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            string text = currentUnpaidBadgeCount > 9 ? "9+" : currentUnpaidBadgeCount.ToString();
+            int bw = text.Length > 1 ? 22 : 18;
+            int bh = 18;
+            int bx = btnTabExpense.Width - bw - 6;
+            int by = 4;
+            if (bx < 0) return;
+
+            AppPalette p = CurrentTheme ?? LightPalette;
+            bool isExpActive = activeTabs.Contains("EXPENSE");
+            Color haloColor = isExpActive ? p.AccentPrimary : p.FloatingNavBg;
+
+            using (var path = CreateRoundedPath(bx, by, bw, bh, bh / 2f))
+            using (var fillBrush = new SolidBrush(p.Danger))
+            using (var haloPen = new Pen(haloColor, 1.5f))
+            {
+                g.FillPath(fillBrush, path);
+                g.DrawPath(haloPen, path);
+            }
+
+            using Font f = FontBold(7.2F);
+            TextRenderer.DrawText(
+                g,
+                text,
+                f,
+                new Rectangle(bx, by, bw, bh),
+                Color.White,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
 
         private void UpdateSplitHintLabel(int totalW, int totalH, int navStartX)
@@ -1164,6 +1391,7 @@ namespace PocketLog.Client
 
         private void UpdateBottomTabIcons()
         {
+            currentUnpaidBadgeCount = GetUnpaidSplitCount();
             var tabs = new (string Key, Guna2Button Btn, UiIcon Icon)[]
             {
                 ("FEED", btnTabFeed, UiIcon.Feed),
@@ -1176,15 +1404,21 @@ namespace PocketLog.Client
                 bool active = activeTabs.Contains(t.Key);
                 t.Btn.FillColor = active ? clrPrimaryGreen : Color.Transparent;
                 t.Btn.ForeColor = active ? Color.White : clrIndigo;
-                t.Btn.HoverState.FillColor = active ? clrPrimaryGreen : clrAppBg;
+                t.Btn.HoverState.FillColor = active ? clrPrimaryGreen : clrInputBg;
+                t.Btn.DisabledState.FillColor = clrAppBg;
+                t.Btn.DisabledState.ForeColor = clrTextMuted;
+                t.Btn.DisabledState.BorderColor = clrBorderLight;
                 t.Btn.BorderThickness = 0;
                 t.Btn.BorderRadius = 22;
                 AttachBtnIcon(t.Btn, t.Icon, active ? Color.White : clrIndigo, 16);
             }
 
+            btnTabExpense?.Invalidate();
+            pnlBottomNav?.Invalidate();
+
             if (pnlBottomNav != null && btnTabFeed != null)
             {
-                UpdateSplitHintLabel(pnlBottomNav.ClientSize.Width, pnlBottomNav.ClientSize.Height, btnTabFeed.Left);
+                UpdateSplitHintLabel(pnlBottomNav.ClientSize.Width, pnlBottomNav.ClientSize.Height, btnTabFeed.Left - 6);
             }
         }
 
@@ -1227,7 +1461,12 @@ namespace PocketLog.Client
             var staleKeys = paneHosts.Keys.Where(k => !activeTabs.Contains(k)).ToList();
             foreach (string key in staleKeys)
             {
-                if (key == "CAMERA") StopWebcam();
+                if (key == "CAMERA")
+                {
+                    StopWebcam();
+                    cameraDraftCapture = null;
+                    cameraDraftRestore = null;
+                }
                 if (paneHosts.TryGetValue(key, out Panel host))
                 {
                     paneHosts.Remove(key);
@@ -1244,6 +1483,10 @@ namespace PocketLog.Client
         protected void ClearAllTabPanes()
         {
             StopWebcam();
+            authDraftCapture = null;
+            authDraftRestore = null;
+            cameraDraftCapture = null;
+            cameraDraftRestore = null;
             activeTabs.Clear();
             isFeedShowingGallery = false;
             foreach (var host in paneHosts.Values.ToList())
@@ -1341,7 +1584,12 @@ namespace PocketLog.Client
             if (!paneHosts.TryGetValue(tabKey, out Panel host) || host == null || host.IsDisposed)
                 return;
 
-            if (tabKey == "CAMERA") StopWebcam();
+            if (tabKey == "CAMERA")
+            {
+                StopWebcam();
+                cameraDraftCapture = null;
+                cameraDraftRestore = null;
+            }
 
             host.SuspendLayout();
             try
