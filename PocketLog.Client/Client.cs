@@ -307,15 +307,23 @@ namespace PocketLog.Client
             };
             scrollRoot.Controls.Add(column);
 
+            int lastColumnHeight = column.Height;
             void SyncColumnBounds()
             {
                 if (scrollRoot.IsDisposed || column.IsDisposed) return;
                 int availW = scrollRoot.ClientSize.Width;
+                int availH = scrollRoot.ClientSize.Height;
                 if (availW <= 0) return;
 
-                int sidePad = availW < 450 ? 10 : 16;
-                int targetW = Math.Clamp(availW - sidePad * 2, 260, MaxColWidth);
-                int targetX = Math.Max(sidePad, (availW - targetW) / 2);
+                lastColumnHeight = column.Height;
+                bool needsVScroll = availH > 0 && column.Height > availH;
+                int vBarReserve = (needsVScroll && !scrollRoot.VerticalScroll.Visible)
+                    ? Math.Max(SystemInformation.VerticalScrollBarWidth, (int)Math.Round(17.0 * scrollRoot.DeviceDpi / 96.0))
+                    : 0;
+                int effectiveW = Math.Max(260, availW - vBarReserve);
+                int sidePad = effectiveW < 450 ? 10 : 16;
+                int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
+                int targetX = Math.Max(sidePad, (effectiveW - targetW) / 2);
                 int currentScrollY = scrollRoot.AutoScrollPosition.Y;
 
                 if (column.Left != targetX || column.Width != targetW)
@@ -323,12 +331,32 @@ namespace PocketLog.Client
                     column.Location = new Point(targetX, currentScrollY);
                     column.Width = targetW;
                 }
+
+                if (scrollRoot.HorizontalScroll.Visible && column.Right <= scrollRoot.ClientSize.Width && scrollRoot.IsHandleCreated)
+                {
+                    scrollRoot.BeginInvoke(new Action(() =>
+                    {
+                        if (!scrollRoot.IsDisposed && !column.IsDisposed && scrollRoot.HorizontalScroll.Visible && column.Right <= scrollRoot.ClientSize.Width)
+                        {
+                            scrollRoot.HorizontalScroll.Value = 0;
+                            scrollRoot.PerformLayout();
+                        }
+                    }));
+                }
             }
 
             AttachEdgeResizeRedirector(scrollRoot);
 
             scrollRoot.Resize += (s, e) => SyncColumnBounds();
             scrollRoot.Layout += (s, e) => SyncColumnBounds();
+            scrollRoot.HandleCreated += (s, e) => SyncColumnBounds();
+            column.SizeChanged += (s, e) =>
+            {
+                if (!column.IsDisposed && column.Height != lastColumnHeight)
+                {
+                    SyncColumnBounds();
+                }
+            };
 
             colPanel = column;
             return scrollRoot;

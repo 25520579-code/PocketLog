@@ -227,47 +227,6 @@ namespace PocketLog.Client
             old?.Dispose();
         }
 
-        private void AttachExpenseScrollWidthGuard(Panel page, Panel col)
-        {
-            void SyncScrollWidth()
-            {
-                if (page.IsDisposed || col.IsDisposed) return;
-                int availW = page.ClientSize.Width;
-                if (availW <= 0) return;
-
-                bool needsVScroll = col.Height > page.ClientSize.Height;
-                int vBarReserve = (needsVScroll && !page.VerticalScroll.Visible)
-                    ? Math.Max(SystemInformation.VerticalScrollBarWidth, (int)Math.Ceiling(18.0 * page.DeviceDpi / 96.0))
-                    : 0;
-                int effectiveW = Math.Max(260, availW - vBarReserve);
-                int sidePad = effectiveW < 450 ? 10 : 16;
-                int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
-                int targetX = Math.Max(sidePad, (effectiveW - targetW) / 2);
-
-                if (col.Left != targetX || col.Width != targetW)
-                {
-                    col.Location = new Point(targetX, page.AutoScrollPosition.Y);
-                    col.Width = targetW;
-                }
-
-                if (page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width && page.IsHandleCreated)
-                {
-                    page.BeginInvoke(new Action(() =>
-                    {
-                        if (!page.IsDisposed && !col.IsDisposed && page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width)
-                        {
-                            page.HorizontalScroll.Value = 0;
-                            page.PerformLayout();
-                        }
-                    }));
-                }
-            }
-
-            page.Resize += (s, e) => SyncScrollWidth();
-            page.Layout += (s, e) => SyncScrollWidth();
-            page.HandleCreated += (s, e) => SyncScrollWidth();
-            SyncScrollWidth();
-        }
         private int CalculatePersonalSpentByCategory(string categoryName)
         {
             int myPostsShare = 0;
@@ -380,7 +339,7 @@ namespace PocketLog.Client
 
                 if (unpaidList.Count > 0)
                 {
-                    using Font owedF = lblOwedTitle.Font;
+                    Font owedF = lblOwedTitle.Font;
                     using Font pillF = FontMedium(7.4F);
                     int owedTextW = TextRenderer.MeasureText("Bạn bè nợ bạn", owedF, new Size(400, 40), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
 
@@ -1077,7 +1036,6 @@ namespace PocketLog.Client
             y += 80;
 
             col.Height = y;
-            AttachExpenseScrollWidthGuard(page, col);
             return page;
         }
 
