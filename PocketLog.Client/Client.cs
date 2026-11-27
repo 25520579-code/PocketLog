@@ -49,9 +49,9 @@ namespace PocketLog.Client
         private PictureBox picLogoIcon;
         private Guna2Panel pnlHeaderUserChip;
         private Guna2CircleButton avtHeaderUser;
-        private Guna2Button btnTabFeed, btnTabCamera, btnTabExpense, btnLogoutTop, btnThemeToggle;
+        private GradientPillButton btnTabFeed, btnTabCamera, btnTabExpense;
+        private Guna2Button btnLogoutTop, btnThemeToggle;
         private Label lblHeaderUser;
-        private int currentUnpaidBadgeCount = 0;
         private readonly ToolTip uiToolTip = new ToolTip();
 
         private Panel pnlDrawerBackdrop;
@@ -668,7 +668,7 @@ namespace PocketLog.Client
             g.FillPath(brush, path);
         }
 
-        private static GraphicsPath CreateRoundedPath(float x, float y, float w, float h, float r)
+        protected static GraphicsPath CreateRoundedPath(float x, float y, float w, float h, float r)
         {
             float d = Math.Max(1f, Math.Min(r * 2f, Math.Min(w, h)));
             GraphicsPath path = new GraphicsPath();
@@ -748,24 +748,26 @@ namespace PocketLog.Client
 
         protected Guna2Button MakeBtn(string text, int x, int y, int w, int h, int radius, Color fill, Color fore, Color border, int borderThick = 1, float fontSize = 8.8F)
         {
-            var btn = new Guna2Button
-            {
-                Text = text,
-                Location = new Point(x, y),
-                Size = new Size(w, h),
-                BorderRadius = radius,
-                FillColor = fill,
-                ForeColor = fore,
-                BorderColor = border,
-                BorderThickness = borderThick,
-                Font = FontMedium(fontSize),
-                TextOffset = Point.Empty,
-                Padding = Padding.Empty,
-                BackColor = Color.Transparent,
-                UseTransparentBackground = true,
-                AutoRoundedCorners = false,
-                Cursor = Cursors.Hand
-            };
+            return ConfigureStyledButton(new Guna2Button(), text, x, y, w, h, radius, fill, fore, border, borderThick, fontSize);
+        }
+
+        private T ConfigureStyledButton<T>(T btn, string text, int x, int y, int w, int h, int radius, Color fill, Color fore, Color border, int borderThick, float fontSize) where T : Guna2Button
+        {
+            btn.Text = text;
+            btn.Location = new Point(x, y);
+            btn.Size = new Size(w, h);
+            btn.BorderRadius = radius;
+            btn.FillColor = fill;
+            btn.ForeColor = fore;
+            btn.BorderColor = border;
+            btn.BorderThickness = borderThick;
+            btn.Font = FontMedium(fontSize);
+            btn.TextOffset = Point.Empty;
+            btn.Padding = Padding.Empty;
+            btn.BackColor = Color.Transparent;
+            btn.UseTransparentBackground = true;
+            btn.AutoRoundedCorners = false;
+            btn.Cursor = Cursors.Hand;
             btn.DisabledState.FillColor = clrAppBg;
             btn.DisabledState.ForeColor = clrTextMuted;
             btn.DisabledState.BorderColor = clrBorderLight;
@@ -1134,14 +1136,13 @@ namespace PocketLog.Client
             };
             pnlBottomNav.Paint += PaintFloatingBottomNavCapsule;
 
-            btnTabFeed = MakeBtn("Bảng tin", 14, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
-            btnTabCamera = MakeBtn("Chụp ảnh", 136, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
-            btnTabExpense = MakeBtn("Chi tiêu", 258, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabFeed = ConfigureStyledButton(new GradientPillButton(), "Bảng tin", 14, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabCamera = ConfigureStyledButton(new GradientPillButton(), "Chụp ảnh", 136, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
+            btnTabExpense = ConfigureStyledButton(new GradientPillButton(), "Chi tiêu", 258, 16, 114, 48, 22, Color.Transparent, clrTextMuted, Color.Transparent, 0, 9.2F);
 
             btnTabFeed.Click += (s, e) => HandleBottomTabClick("FEED");
             btnTabCamera.Click += (s, e) => HandleBottomTabClick("CAMERA");
             btnTabExpense.Click += (s, e) => HandleBottomTabClick("EXPENSE");
-            btnTabExpense.Paint += PaintExpenseTabBadge;
 
             lblSplitModeHint = new Label
             {
@@ -1298,44 +1299,6 @@ namespace PocketLog.Client
             }
         }
 
-        private void PaintExpenseTabBadge(object sender, PaintEventArgs e)
-        {
-            if (currentUnpaidBadgeCount <= 0 || btnTabExpense == null || btnTabExpense.IsDisposed)
-                return;
-
-            Graphics g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-            string text = currentUnpaidBadgeCount > 9 ? "9+" : currentUnpaidBadgeCount.ToString();
-            int bw = text.Length > 1 ? 22 : 18;
-            int bh = 18;
-            int bx = btnTabExpense.Width - bw - 6;
-            int by = 4;
-            if (bx < 0) return;
-
-            AppPalette p = CurrentTheme ?? LightPalette;
-            bool isExpActive = activeTabs.Contains("EXPENSE");
-            Color haloColor = isExpActive ? p.AccentPrimary : p.FloatingNavBg;
-
-            using (var path = CreateRoundedPath(bx, by, bw, bh, bh / 2f))
-            using (var fillBrush = new SolidBrush(p.Danger))
-            using (var haloPen = new Pen(haloColor, 1.5f))
-            {
-                g.FillPath(fillBrush, path);
-                g.DrawPath(haloPen, path);
-            }
-
-            using Font f = FontBold(7.2F);
-            TextRenderer.DrawText(
-                g,
-                text,
-                f,
-                new Rectangle(bx, by, bw, bh),
-                Color.White,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        }
-
         private void UpdateSplitHintLabel(int totalW, int totalH, int navStartX)
         {
             if (lblSplitModeHint == null) return;
@@ -1391,8 +1354,9 @@ namespace PocketLog.Client
 
         private void UpdateBottomTabIcons()
         {
-            currentUnpaidBadgeCount = GetUnpaidSplitCount();
-            var tabs = new (string Key, Guna2Button Btn, UiIcon Icon)[]
+            AppPalette p = CurrentTheme ?? LightPalette;
+            int unpaidCount = GetUnpaidSplitCount();
+            var tabs = new (string Key, GradientPillButton Btn, UiIcon Icon)[]
             {
                 ("FEED", btnTabFeed, UiIcon.Feed),
                 ("CAMERA", btnTabCamera, UiIcon.Camera),
@@ -1401,7 +1365,11 @@ namespace PocketLog.Client
 
             foreach (var t in tabs)
             {
+                if (t.Btn == null || t.Btn.IsDisposed) continue;
                 bool active = activeTabs.Contains(t.Key);
+                t.Btn.IsGradientActive = active;
+                t.Btn.GradientStart = p.AccentPrimary;
+                t.Btn.GradientEnd = p.AccentSecondary;
                 t.Btn.FillColor = active ? clrPrimaryGreen : Color.Transparent;
                 t.Btn.ForeColor = active ? Color.White : clrIndigo;
                 t.Btn.HoverState.FillColor = active ? clrPrimaryGreen : clrInputBg;
@@ -1413,7 +1381,14 @@ namespace PocketLog.Client
                 AttachBtnIcon(t.Btn, t.Icon, active ? Color.White : clrIndigo, 16);
             }
 
-            btnTabExpense?.Invalidate();
+            if (btnTabExpense != null && !btnTabExpense.IsDisposed)
+            {
+                btnTabExpense.BadgeCount = unpaidCount;
+                btnTabExpense.BadgeFillColor = p.Danger;
+                btnTabExpense.BadgeHaloColor = btnTabExpense.IsGradientActive ? p.AccentPrimary : p.FloatingNavBg;
+                btnTabExpense.Invalidate();
+            }
+
             pnlBottomNav?.Invalidate();
 
             if (pnlBottomNav != null && btnTabFeed != null)
