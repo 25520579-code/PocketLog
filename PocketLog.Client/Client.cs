@@ -280,12 +280,20 @@ namespace PocketLog.Client
             else
             {
                 string clean = fullName.Trim();
-                avtHeaderUser.Text = clean.Substring(0, 1).ToUpper();
+                avtHeaderUser.Text = GetAvatarInitial(clean);
                 lblHeaderUser.Text = clean;
                 pnlHeaderUserChip.Visible = true;
                 btnLogoutTop.Visible = true;
             }
             LayoutHeaderControls();
+        }
+
+        protected static string GetAvatarInitial(string name)
+        {
+            string clean = (name ?? "").Trim();
+            if (string.IsNullOrEmpty(clean)) return "U";
+            string first = System.Globalization.StringInfo.GetNextTextElement(clean);
+            return string.IsNullOrEmpty(first) ? "U" : first.ToUpperInvariant();
         }
 
         // Bố cục trang cuộn tự căn giữa & co giãn mượt theo chiều rộng cửa sổ
@@ -316,10 +324,12 @@ namespace PocketLog.Client
                 if (availW <= 0) return;
 
                 lastColumnHeight = column.Height;
-                bool needsVScroll = availH > 0 && column.Height > availH;
-                int vBarReserve = (needsVScroll && !scrollRoot.VerticalScroll.Visible)
-                    ? Math.Max(SystemInformation.VerticalScrollBarWidth, (int)Math.Round(17.0 * scrollRoot.DeviceDpi / 96.0))
-                    : 0;
+                bool expectVScroll = scrollRoot.VerticalScroll.Visible || (availH > 0 && column.Height > availH);
+                int reserveTarget = Math.Max(
+                    SystemInformation.VerticalScrollBarWidth,
+                    (int)Math.Ceiling(18.0 * scrollRoot.DeviceDpi / 96.0));
+                int actualVBar = scrollRoot.VerticalScroll.Visible ? Math.Max(0, scrollRoot.Width - availW) : 0;
+                int vBarReserve = expectVScroll ? Math.Max(0, reserveTarget - actualVBar) : 0;
                 int effectiveW = Math.Max(260, availW - vBarReserve);
                 int sidePad = effectiveW < 450 ? 10 : 16;
                 int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
@@ -630,6 +640,7 @@ namespace PocketLog.Client
                         break;
 
                     case UiIcon.Eye:
+                    case UiIcon.EyeOff:
                         using (GraphicsPath eyePath = new GraphicsPath())
                         {
                             eyePath.AddBezier(
@@ -646,26 +657,10 @@ namespace PocketLog.Client
                             g.DrawPath(p, eyePath);
                         }
                         g.DrawEllipse(p, s * 0.39f, s * 0.39f, s * 0.22f, s * 0.22f);
-                        break;
-
-                    case UiIcon.EyeOff:
-                        using (GraphicsPath eyeOffPath = new GraphicsPath())
+                        if (icon == UiIcon.EyeOff)
                         {
-                            eyeOffPath.AddBezier(
-                                new PointF(s * 0.12f, s * 0.50f),
-                                new PointF(s * 0.30f, s * 0.22f),
-                                new PointF(s * 0.70f, s * 0.22f),
-                                new PointF(s * 0.88f, s * 0.50f));
-                            eyeOffPath.AddBezier(
-                                new PointF(s * 0.88f, s * 0.50f),
-                                new PointF(s * 0.70f, s * 0.78f),
-                                new PointF(s * 0.30f, s * 0.78f),
-                                new PointF(s * 0.12f, s * 0.50f));
-                            eyeOffPath.CloseFigure();
-                            g.DrawPath(p, eyeOffPath);
+                            g.DrawLine(p, s * 0.18f, s * 0.18f, s * 0.82f, s * 0.82f);
                         }
-                        g.DrawEllipse(p, s * 0.39f, s * 0.39f, s * 0.22f, s * 0.22f);
-                        g.DrawLine(p, s * 0.18f, s * 0.18f, s * 0.82f, s * 0.82f);
                         break;
 
                     default:
@@ -708,6 +703,59 @@ namespace PocketLog.Client
             return path;
         }
 
+        protected static void AttachControlImageDisposal(Control ctrl)
+        {
+            if (ctrl == null) return;
+
+            static Image GetControlImage(Control c) => c switch
+            {
+                PictureBox pb => pb.Image,
+                Guna2GradientButton gb => gb.Image,
+                Guna2Button btn => btn.Image,
+                ButtonBase bb => bb.Image,
+                _ => null
+            };
+
+            static void ClearControlImage(Control c)
+            {
+                switch (c)
+                {
+                    case PictureBox pb: pb.Image = null; break;
+                    case Guna2GradientButton gb: gb.Image = null; break;
+                    case Guna2Button btn: btn.Image = null; break;
+                    case ButtonBase bb: bb.Image = null; break;
+                }
+            }
+
+            Image capturedImg = GetControlImage(ctrl);
+            ctrl.Disposed += (s, e) =>
+            {
+                try
+                {
+                    Image current = GetControlImage(ctrl);
+                    ClearControlImage(ctrl);
+                    current?.Dispose();
+                }
+                catch { }
+                try { capturedImg?.Dispose(); } catch { }
+            };
+        }
+
+        protected static void SetControlFont(Control ctrl, Font newFont)
+        {
+            if (ctrl == null || newFont == null) return;
+            Font old = ctrl.Font;
+            ctrl.Font = newFont;
+            if (old != null &&
+                !ReferenceEquals(old, newFont) &&
+                !ReferenceEquals(old, SystemFonts.DefaultFont) &&
+                !ReferenceEquals(old, Control.DefaultFont) &&
+                !ReferenceEquals(old, ctrl.Parent?.Font))
+            {
+                try { old.Dispose(); } catch { }
+            }
+        }
+
         protected Guna2Panel MakeSoftIconBadge(UiIcon icon, int x, int y, int boxSize, int radius, Color bgFill, Color iconColor)
         {
             var badge = new Guna2Panel
@@ -729,6 +777,7 @@ namespace PocketLog.Client
                 BackColor = Color.Transparent,
                 Enabled = false
             };
+            AttachControlImageDisposal(pic);
             badge.Controls.Add(pic);
             return badge;
         }
@@ -1014,6 +1063,7 @@ namespace PocketLog.Client
                 BackColor = Color.Transparent,
                 Enabled = false
             };
+            AttachControlImageDisposal(picLogoIcon);
             pnlLogoBadge.Controls.Add(picLogoIcon);
 
             lblBrand = new Label
@@ -1059,9 +1109,8 @@ namespace PocketLog.Client
                 TabStop = false,
                 Cursor = Cursors.Default
             };
-            avtHeaderUser.HoverState.FillColor = clrPrimaryGreen;
-            avtHeaderUser.DisabledState.FillColor = clrPrimaryGreen;
-            avtHeaderUser.DisabledState.ForeColor = clrPrimaryGreen;
+            avtHeaderUser.PressedDepth = 0;
+            avtHeaderUser.PressedColor = Color.Transparent;
             avtHeaderUser.Paint += (s, e) =>
             {
                 if (string.IsNullOrEmpty(avtHeaderUser.Text)) return;
@@ -1080,7 +1129,7 @@ namespace PocketLog.Client
                 Location = new Point(34, 4),
                 Size = new Size(92, 26),
                 Font = FontMedium(8.5F),
-                ForeColor = clrPrimaryGreen,
+                ForeColor = isDarkMode ? clrAccentSecondary : clrPrimaryGreen,
                 UseMnemonic = false,
                 AutoEllipsis = true,
                 TextAlign = ContentAlignment.MiddleLeft,
@@ -1102,6 +1151,7 @@ namespace PocketLog.Client
             btnThemeToggle.ImageAlign = HorizontalAlignment.Center;
             btnThemeToggle.ImageOffset = Point.Empty;
             btnThemeToggle.TextOffset = Point.Empty;
+            AttachControlImageDisposal(btnThemeToggle);
             btnThemeToggle.Click += (s, e) => ToggleThemeMode();
             pnlHeader.Controls.Add(btnThemeToggle);
 
@@ -1337,7 +1387,7 @@ namespace PocketLog.Client
                 lblSplitModeHint.Text = dual
                     ? "● Đang xem 2 mục • Bấm lại mục đang sáng để tắt bớt"
                     : "● Màn hình rộng: Bấm thêm 1 mục để mở song song";
-                lblSplitModeHint.ForeColor = dual ? clrPrimaryGreen : clrTextMuted;
+                lblSplitModeHint.ForeColor = dual ? (isDarkMode ? clrAccentSecondary : clrPrimaryGreen) : clrTextMuted;
                 lblSplitModeHint.SetBounds(18, (totalH - 28) / 2, availLeftW, 28);
                 lblSplitModeHint.Visible = true;
             }
@@ -1401,7 +1451,7 @@ namespace PocketLog.Client
                 t.Btn.FillColor = active ? clrPrimaryGreen : Color.Transparent;
                 t.Btn.ForeColor = active ? Color.White : clrIndigo;
                 t.Btn.HoverState.FillColor = active ? clrPrimaryGreen : clrInputBg;
-                t.Btn.DisabledState.FillColor = clrAppBg;
+                t.Btn.DisabledState.FillColor = p.FloatingNavBg;
                 t.Btn.DisabledState.ForeColor = clrTextMuted;
                 t.Btn.DisabledState.BorderColor = clrBorderLight;
                 t.Btn.BorderThickness = 0;
@@ -1413,7 +1463,9 @@ namespace PocketLog.Client
             {
                 btnTabExpense.BadgeCount = unpaidCount;
                 btnTabExpense.BadgeFillColor = p.Danger;
-                btnTabExpense.BadgeHaloColor = btnTabExpense.IsGradientActive ? p.AccentPrimary : p.FloatingNavBg;
+                btnTabExpense.BadgeHaloColor = btnTabExpense.IsGradientActive
+                    ? BlendControlColor(p.AccentPrimary, p.AccentSecondary, 0.55f)
+                    : p.FloatingNavBg;
                 btnTabExpense.Invalidate();
             }
 
@@ -1486,6 +1538,7 @@ namespace PocketLog.Client
         protected void ClearAllTabPanes()
         {
             StopWebcam();
+            onAuthFailedUI = null;
             authDraftCapture = null;
             authDraftRestore = null;
             cameraDraftCapture = null;

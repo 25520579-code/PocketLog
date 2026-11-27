@@ -493,6 +493,7 @@ namespace PocketLog.Client
                     Trimming = StringTrimming.EllipsisCharacter
                 };
 
+                int innerW = Math.Max(40, w - padEdge * 2);
                 int rightPillW = 0;
                 int tagCount = post?.TaggedFriends?.Count ?? 0;
                 if (tagCount > 0)
@@ -512,8 +513,11 @@ namespace PocketLog.Client
                     const int rightIcoPx = 12;
                     const int rightOverhead = 10 + rightIcoPx + 5 + 10 + 4;
                     SizeF tagSz = g.MeasureString(tagLabel, pillFont, 400, fmt);
-                    int maxRightW = Math.Max(88, (int)(w * 0.44f));
-                    rightPillW = Math.Clamp((int)Math.Ceiling(tagSz.Width) + rightOverhead, 72, maxRightW);
+                    int maxRightW = w < 208
+                        ? Math.Max(48, (innerW - pillGap) / 2)
+                        : Math.Max(88, (int)(w * 0.44f));
+                    int minRightW = Math.Min(72, maxRightW);
+                    rightPillW = Math.Clamp((int)Math.Ceiling(tagSz.Width) + rightOverhead, minRightW, maxRightW);
                     int pillH = Math.Max(26, (int)Math.Ceiling(tagSz.Height) + 10);
                     float rx = w - padEdge - rightPillW;
                     DrawFrostedPill(g, rx, padEdge, rightPillW, pillH, UiIcon.Users, rightIcoPx, tagLabel, pillFont, fmt);
@@ -542,12 +546,16 @@ namespace PocketLog.Client
 
                 const int leftIcoPx = 13;
                 const int leftOverhead = 10 + leftIcoPx + 5 + 10 + 4;
-                int availLeftW = rightPillW > 0
-                    ? Math.Max(88, w - padEdge * 2 - rightPillW - pillGap)
-                    : Math.Max(100, w - padEdge * 2);
+                int rawLeftAvail = rightPillW > 0
+                    ? (innerW - rightPillW - pillGap)
+                    : innerW;
+                int availLeftW = w < 208
+                    ? Math.Max(40, rawLeftAvail)
+                    : Math.Max(88, rawLeftAvail);
+                int minLeftW = Math.Min(76, availLeftW);
 
                 SizeF catSz = g.MeasureString(catLabel, pillFont, availLeftW, fmt);
-                int leftPillW = Math.Clamp((int)Math.Ceiling(catSz.Width) + leftOverhead, 76, availLeftW);
+                int leftPillW = Math.Clamp((int)Math.Ceiling(catSz.Width) + leftOverhead, minLeftW, availLeftW);
                 int leftPillH = Math.Max(26, (int)Math.Ceiling(catSz.Height) + 10);
                 UiIcon catIcon = owner != null ? owner.GetCategoryIcon(post?.Category) : UiIcon.Camera;
                 DrawFrostedPill(g, padEdge, padEdge, leftPillW, leftPillH, catIcon, leftIcoPx, catLabel, pillFont, fmt);
@@ -872,9 +880,10 @@ namespace PocketLog.Client
                 StringFormat nameFmt,
                 StringFormat centerFmt)
             {
+                Color accentInk = (owner != null && owner.isDarkMode) ? p.AccentSecondary : p.AccentPrimary;
                 var circleRect = new RectangleF(sx + 12f, 10f, 48f, 48f);
                 using (var fill = new SolidBrush(p.SoftAccentBg))
-                using (var dashedPen = new Pen(p.AccentPrimary, 2f) { DashStyle = DashStyle.Dash })
+                using (var dashedPen = new Pen(accentInk, 2f) { DashStyle = DashStyle.Dash })
                 {
                     g.FillEllipse(fill, circleRect);
                     g.DrawEllipse(dashedPen, circleRect);
@@ -882,12 +891,12 @@ namespace PocketLog.Client
 
                 if (owner != null)
                 {
-                    using Bitmap ico = owner.CreateVectorIcon(UiIcon.UserPlus, p.AccentPrimary, 20);
+                    using Bitmap ico = owner.CreateVectorIcon(UiIcon.UserPlus, accentInk, 20);
                     g.DrawImage(ico, circleRect.X + 14f, circleRect.Y + 14f, 20f, 20f);
                 }
                 else
                 {
-                    using var plusBrush = new SolidBrush(p.AccentPrimary);
+                    using var plusBrush = new SolidBrush(accentInk);
                     g.DrawString("+", labelFont, plusBrush, circleRect, centerFmt);
                 }
 
@@ -909,7 +918,7 @@ namespace PocketLog.Client
                     g.DrawString(countText, badgeFont, Brushes.White, new RectangleF(bx, by, bw, bh), centerFmt);
                 }
 
-                using var textBrush = new SolidBrush(p.AccentPrimary);
+                using var textBrush = new SolidBrush(accentInk);
                 g.DrawString("+ Kết bạn", labelFont, textBrush, new RectangleF(sx + 2f, 65f, SlotWidth - 4f, 22f), nameFmt);
             }
 
@@ -947,7 +956,8 @@ namespace PocketLog.Client
                     g.DrawEllipse(mutedPen, ringRect);
                 }
 
-                Color tint = AvatarTints[Math.Abs(friend.UserId) % AvatarTints.Length];
+                uint tintIdx = unchecked((uint)friend.UserId) % (uint)AvatarTints.Length;
+                Color tint = AvatarTints[tintIdx];
                 Color avatarFill = friend.IsOnline ? tint : BlendControlColor(tint, p.TextMuted, 0.65f);
                 using (var avatarBrush = new SolidBrush(avatarFill))
                 {
@@ -955,7 +965,7 @@ namespace PocketLog.Client
                 }
 
                 string cleanName = (friend.Name ?? "").Trim();
-                string initial = string.IsNullOrEmpty(cleanName) ? "U" : cleanName.Substring(0, 1).ToUpper();
+                string initial = GetAvatarInitial(cleanName);
                 g.DrawString(initial, initialFont, Brushes.White, avatarRect, centerFmt);
 
                 if (friend.IsOnline)

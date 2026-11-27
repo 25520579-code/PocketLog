@@ -257,8 +257,8 @@ namespace PocketLog.Client
             if (cat.Contains("Mua sắm")) return Color.FromArgb(236, 72, 153);
             if (cat.Contains("Học tập")) return Color.FromArgb(14, 165, 233);
 
-            int idx = Math.Abs((post?.AuthorId ?? 0) + (post?.PostId ?? 0));
-            return FriendSocialPhotoPalette[idx % FriendSocialPhotoPalette.Length];
+            uint idx = unchecked((uint)((post?.AuthorId ?? 0) + (post?.PostId ?? 0))) % (uint)FriendSocialPhotoPalette.Length;
+            return FriendSocialPhotoPalette[idx];
         }
 
         private void CloseCurrentSocket()

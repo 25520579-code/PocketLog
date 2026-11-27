@@ -17,6 +17,7 @@ namespace PocketLog.Client
     {
         private VideoCaptureDevice webcamDevice;
         private bool isWebcamStreaming = false;
+        private bool suppressAutoCameraStart = false;
         private Bitmap latestWebcamFrame;
         private readonly object frameLock = new object();
         private int selectedCameraIndex = 0;
@@ -525,7 +526,7 @@ namespace PocketLog.Client
             pnlViewfinder.ContextMenuStrip = ctxMenu;
             picPreview.ContextMenuStrip = ctxMenu;
 
-            bool started = StartWebcam(picPreview, lblPrompt);
+            bool started = !suppressAutoCameraStart && StartWebcam(picPreview, lblPrompt);
             if (!started)
             {
                 setCamStateBadge("Chưa có Cam", noCamBadgeColor);
@@ -1155,50 +1156,7 @@ namespace PocketLog.Client
                     DisposeButtonImage(() => item.Btn.Image, img => item.Btn.Image = img);
             };
 
-            AttachCameraScrollWidthGuard(page, col);
             return page;
-        }
-
-        private void AttachCameraScrollWidthGuard(Panel page, Panel col)
-        {
-            void SyncScrollWidth()
-            {
-                if (page.IsDisposed || col.IsDisposed) return;
-                int availW = page.ClientSize.Width;
-                if (availW <= 0) return;
-
-                bool needsVScroll = col.Height > page.ClientSize.Height;
-                int vBarReserve = (needsVScroll && !page.VerticalScroll.Visible)
-                    ? Math.Max(SystemInformation.VerticalScrollBarWidth, (int)Math.Ceiling(18.0 * page.DeviceDpi / 96.0))
-                    : 0;
-                int effectiveW = Math.Max(260, availW - vBarReserve);
-                int sidePad = effectiveW < 450 ? 10 : 16;
-                int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
-                int targetX = Math.Max(sidePad, (effectiveW - targetW) / 2);
-
-                if (col.Left != targetX || col.Width != targetW)
-                {
-                    col.Location = new Point(targetX, page.AutoScrollPosition.Y);
-                    col.Width = targetW;
-                }
-
-                if (page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width && page.IsHandleCreated)
-                {
-                    page.BeginInvoke(new Action(() =>
-                    {
-                        if (!page.IsDisposed && !col.IsDisposed && page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width)
-                        {
-                            page.HorizontalScroll.Value = 0;
-                            page.PerformLayout();
-                        }
-                    }));
-                }
-            }
-
-            page.Resize += (s, e) => SyncScrollWidth();
-            page.Layout += (s, e) => SyncScrollWidth();
-            page.HandleCreated += (s, e) => SyncScrollWidth();
-            SyncScrollWidth();
         }
     }
 }

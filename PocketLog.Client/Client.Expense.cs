@@ -172,42 +172,6 @@ namespace PocketLog.Client
             }
         }
 
-        private static Guna2Panel AttachSoftBadgeDisposal(Guna2Panel badge)
-        {
-            if (badge == null) return null;
-            foreach (PictureBox pic in badge.Controls.OfType<PictureBox>().ToList())
-            {
-                Image capturedImg = pic.Image;
-                pic.Disposed += (s, e) =>
-                {
-                    try
-                    {
-                        Image current = pic.Image;
-                        pic.Image = null;
-                        current?.Dispose();
-                    }
-                    catch { }
-                    try { capturedImg?.Dispose(); } catch { }
-                };
-            }
-            return badge;
-        }
-
-        private static void AttachControlImageDisposal(Control ctrl, Func<Image> getImg, Action<Image> setImg)
-        {
-            if (ctrl == null) return;
-            ctrl.Disposed += (s, e) =>
-            {
-                try
-                {
-                    Image current = getImg();
-                    setImg(null);
-                    current?.Dispose();
-                }
-                catch { }
-            };
-        }
-
         private static string GetShortDisplayName(string fullName)
         {
             if (string.IsNullOrWhiteSpace(fullName)) return "bạn";
@@ -296,7 +260,7 @@ namespace PocketLog.Client
                 UseTransparentBackground = true,
                 UnpaidCount = unpaidList.Count,
                 UnpaidDotColor = theme.Danger,
-                Cursor = unpaidList.Count > 0 ? Cursors.Hand : Cursors.Default
+                Cursor = Cursors.Default
             };
             AttachEdgeResizeRedirector(pnlBanner);
 
@@ -306,12 +270,12 @@ namespace PocketLog.Client
 
             var lblOweTitle = MakeLabel("Bạn đang nợ", 18, 15, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
             var lblOweVal = MakeLabel($"{totalIOwe:N0}đ", 18, 41, 12.2F, FontStyle.Bold, oweValueColor, 150);
-            lblOweVal.Font = FontBold(12.2F);
+            SetControlFont(lblOweVal, FontBold(12.2F));
             lblOweVal.Height = TextRenderer.MeasureText("Ág", lblOweVal.Font).Height + 4;
 
             var lblOwedTitle = MakeLabel("Bạn bè nợ bạn", 200, 15, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
             var lblOwedVal = MakeLabel($"{totalOwedToMe:N0}đ", 200, 41, 12.2F, FontStyle.Bold, owedValueColor, 150);
-            lblOwedVal.Font = FontBold(12.2F);
+            SetControlFont(lblOwedVal, FontBold(12.2F));
             lblOwedVal.Height = TextRenderer.MeasureText("Ág", lblOwedVal.Font).Height + 4;
 
             void LayoutBanner()
@@ -377,6 +341,15 @@ namespace PocketLog.Client
             pnlBanner.Resize += (s, e) => LayoutBanner();
             if (unpaidList.Count > 0)
             {
+                pnlBanner.MouseMove += (s, e) =>
+                {
+                    Cursor target = pnlBanner.UnpaidPillBounds.Contains(e.Location) ? Cursors.Hand : Cursors.Default;
+                    if (pnlBanner.Cursor != target) pnlBanner.Cursor = target;
+                };
+                pnlBanner.MouseLeave += (s, e) =>
+                {
+                    if (pnlBanner.Cursor != Cursors.Default) pnlBanner.Cursor = Cursors.Default;
+                };
                 pnlBanner.MouseClick += (s, e) =>
                 {
                     if (pnlBanner.UnpaidPillBounds.Contains(e.Location))
@@ -471,7 +444,7 @@ namespace PocketLog.Client
                     Visible = currentDebt.ProofImage == null,
                     BackColor = Color.Transparent
                 };
-                var emptyProofBadge = AttachSoftBadgeDisposal(MakeSoftIconBadge(UiIcon.Receipt, 47, 26, 38, 12, clrSoftGreenBg, accentText));
+                var emptyProofBadge = MakeSoftIconBadge(UiIcon.Receipt, 47, 26, 38, 12, clrSoftGreenBg, accentText);
                 var lblEmptyProof = new Label
                 {
                     Text = "Ảnh bill\nchuyển khoản",
@@ -491,10 +464,10 @@ namespace PocketLog.Client
                 cardActiveDebt.Controls.Add(pnlBillImg);
 
                 var btnUploadProof = MakeBtn("Gửi ảnh bill CK", 160, 108, Math.Max(140, w - 176), 66, 16, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.5F);
-                btnUploadProof.HoverState.FillColor = clrPrimaryGreen;
-                btnUploadProof.HoverState.ForeColor = Color.White;
+                btnUploadProof.HoverState.FillColor = clrCardBg;
+                btnUploadProof.HoverState.ForeColor = softTextInk;
                 btnUploadProof.HoverState.BorderColor = clrPrimaryGreen;
-                AttachControlImageDisposal(btnUploadProof, () => btnUploadProof.Image, img => btnUploadProof.Image = img);
+                AttachControlImageDisposal(btnUploadProof);
 
                 var btnFriendVerify = new Guna2GradientButton
                 {
@@ -516,7 +489,7 @@ namespace PocketLog.Client
                 btnFriendVerify.DisabledState.FillColor2 = clrInputBg;
                 btnFriendVerify.DisabledState.ForeColor = clrTextMuted;
                 btnFriendVerify.DisabledState.BorderColor = clrBorderLight;
-                AttachControlImageDisposal(btnFriendVerify, () => btnFriendVerify.Image, img => btnFriendVerify.Image = img);
+                AttachControlImageDisposal(btnFriendVerify);
 
                 string uploadFullText;
                 string uploadShortText;
@@ -649,7 +622,7 @@ namespace PocketLog.Client
                     UseTransparentBackground = true
                 };
                 AttachEdgeResizeRedirector(compactEmpty);
-                compactEmpty.Controls.Add(AttachSoftBadgeDisposal(MakeSoftIconBadge(UiIcon.Receipt, 16, 25, 44, 14, clrSoftGreenBg, accentText)));
+                compactEmpty.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 16, 25, 44, 14, clrSoftGreenBg, accentText));
                 var lEmpty1 = MakeLabel("Chưa có khoản chia tiền nào được gắn tag", 72, 16, 8.4F, FontStyle.Bold, clrTextMain, w - 88);
                 lEmpty1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
                 var lEmpty2 = MakeLabel("Gắn tag bạn bè lúc đăng ảnh chi tiêu để tự động chia hóa đơn", 72, lEmpty1.Bottom + 4, 8.2F, FontStyle.Regular, clrTextMuted, w - 88, lines: 2);
@@ -668,7 +641,7 @@ namespace PocketLog.Client
             btnToggleUnpaid.HoverState.FillColor = clrCardBg;
             btnToggleUnpaid.HoverState.BorderColor = clrPrimaryGreen;
             AttachBtnIcon(btnToggleUnpaid, isUnpaidDropdownOpen ? UiIcon.ChevronUp : UiIcon.ChevronDown, accentText, 15);
-            AttachControlImageDisposal(btnToggleUnpaid, () => btnToggleUnpaid.Image, img => btnToggleUnpaid.Image = img);
+            AttachControlImageDisposal(btnToggleUnpaid);
             AttachEdgeResizeRedirector(btnToggleUnpaid);
 
             btnToggleUnpaid.Click += (s, e) =>
@@ -697,7 +670,7 @@ namespace PocketLog.Client
                         UseTransparentBackground = true
                     };
                     AttachEdgeResizeRedirector(emptyBox);
-                    emptyBox.Controls.Add(AttachSoftBadgeDisposal(MakeSoftIconBadge(UiIcon.Check, 14, 14, 30, 10, paidBg, positiveColor)));
+                    emptyBox.Controls.Add(MakeSoftIconBadge(UiIcon.Check, 14, 14, 30, 10, paidBg, positiveColor));
                     var lblAllPaid = MakeLabel("Tất cả các khoản chia tiền đều đã tất toán xong!", 54, 10, 8.4F, FontStyle.Bold, positiveColor, w - 70, lines: 2);
                     lblAllPaid.TextAlign = ContentAlignment.MiddleLeft;
                     lblAllPaid.Height = emptyBox.Height - 20;
@@ -764,7 +737,7 @@ namespace PocketLog.Client
 
             y += 8;
             var lblSecCat = MakeLabel("Chi tiêu thực tế theo danh mục", 2, y, 11F, FontStyle.Bold, clrTextMain, w - 8);
-            lblSecCat.Font = FontBold(11F);
+            SetControlFont(lblSecCat, FontBold(11F));
             lblSecCat.Height = TextRenderer.MeasureText("Ág", lblSecCat.Font).Height + 4;
             lblSecCat.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             col.Controls.Add(lblSecCat);
@@ -792,10 +765,10 @@ namespace PocketLog.Client
                 };
                 AttachEdgeResizeRedirector(catCard);
 
-                var iconBadge = AttachSoftBadgeDisposal(MakeSoftIconBadge(
+                var iconBadge = MakeSoftIconBadge(
                     GetCategoryIcon(catName), 14, 15, 40, 13,
                     isOver ? clrSoftRedBg : clrSoftGreenBg,
-                    isOver ? clrRedDanger : accentText));
+                    isOver ? clrRedDanger : accentText);
                 catCard.Controls.Add(iconBadge);
 
                 int leftColW = Math.Max(90, w - 64 - limBtnW - 24);
@@ -869,7 +842,7 @@ namespace PocketLog.Client
             cardTotal.Controls.Add(lblTotalHeader);
 
             var lblGrand = MakeLabel($"{grandTotal:N0}đ   /   Hạn mức: {totalBudgetLimit:N0}đ", 18, 38, 11F, FontStyle.Bold, isTotalOver ? clrRedDanger : clrTextMain, w - 36);
-            lblGrand.Font = FontBold(11F);
+            SetControlFont(lblGrand, FontBold(11F));
             lblGrand.Height = TextRenderer.MeasureText("Ág", lblGrand.Font).Height + 4;
             lblGrand.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             cardTotal.Controls.Add(lblGrand);
@@ -955,7 +928,7 @@ namespace PocketLog.Client
             btnExportCsv.HoverState.FillColor = clrSoftGreenBg;
             btnExportCsv.HoverState.BorderColor = clrPrimaryGreen;
             AttachBtnIcon(btnExportCsv, UiIcon.Receipt, accentText, 17);
-            AttachControlImageDisposal(btnExportCsv, () => btnExportCsv.Image, img => btnExportCsv.Image = img);
+            AttachControlImageDisposal(btnExportCsv);
             AttachEdgeResizeRedirector(btnExportCsv);
 
             var lblExportStatus = MakeLabel("", 4, y + 54, 8.2F, FontStyle.Regular, clrTextMuted, w - 8);

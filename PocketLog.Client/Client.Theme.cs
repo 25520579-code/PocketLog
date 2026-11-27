@@ -232,13 +232,16 @@ namespace PocketLog.Client
                 avtHeaderUser.FillColor = clrPrimaryGreen;
                 avtHeaderUser.ForeColor = clrPrimaryGreen;
                 avtHeaderUser.HoverState.FillColor = clrPrimaryGreen;
+                avtHeaderUser.HoverState.ForeColor = clrPrimaryGreen;
+                avtHeaderUser.CheckedState.FillColor = clrPrimaryGreen;
+                avtHeaderUser.CheckedState.ForeColor = clrPrimaryGreen;
                 avtHeaderUser.DisabledState.FillColor = clrPrimaryGreen;
                 avtHeaderUser.DisabledState.ForeColor = clrPrimaryGreen;
                 avtHeaderUser.Invalidate();
             }
             if (lblHeaderUser != null && !lblHeaderUser.IsDisposed)
             {
-                lblHeaderUser.ForeColor = clrPrimaryGreen;
+                lblHeaderUser.ForeColor = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
             }
 
             if (btnLogoutTop != null && !btnLogoutTop.IsDisposed)
@@ -344,8 +347,10 @@ namespace PocketLog.Client
                 camDraft = cameraDraftCapture?.Invoke();
             }
 
+            bool prevSuppress = suppressAutoCameraStart;
             try
             {
+                suppressAutoCameraStart = camDraft?.UploadedPhoto != null;
                 foreach (string tabKey in activeTabs.ToList())
                 {
                     if (paneHosts.TryGetValue(tabKey, out Panel host) && host != null && !host.IsDisposed)
@@ -380,6 +385,7 @@ namespace PocketLog.Client
             }
             finally
             {
+                suppressAutoCameraStart = prevSuppress;
                 camDraft?.Dispose();
             }
         }

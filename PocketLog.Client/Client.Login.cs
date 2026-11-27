@@ -124,6 +124,7 @@ namespace PocketLog.Client
             UpdateHeaderUserUI("");
 
             AppPalette theme = CurrentTheme;
+            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
             Panel page = CreateResponsiveScrollPage(out Panel col);
             int w = col.Width;
             int y = 14;
@@ -142,7 +143,7 @@ namespace PocketLog.Client
             AttachEdgeResizeRedirector(pnlHero);
 
             var lblHeroTitle = MakeLabel("PocketLog", 76, 20, 13.5F, FontStyle.Bold, Color.White, 140);
-            lblHeroTitle.Font = FontBold(13.5F);
+            SetControlFont(lblHeroTitle, FontBold(13.5F));
             lblHeroTitle.Height = TextRenderer.MeasureText("Ág", lblHeroTitle.Font).Height + 4;
 
             var lblCloudChip = new Label
@@ -212,13 +213,13 @@ namespace PocketLog.Client
             };
 
             int discBtnW = Math.Max(144, MeasurePillBtnWidth("Dò Server LAN", 8.5F, 17));
-            var btnDiscoverServer = MakeBtn("Dò Server LAN", w - discBtnW - 16, 14, discBtnW, 34, 17, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.5F);
+            var btnDiscoverServer = MakeBtn("Dò Server LAN", w - discBtnW - 16, 14, discBtnW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.5F);
             btnDiscoverServer.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnDiscoverServer.HoverState.FillColor = clrPrimaryGreen;
             btnDiscoverServer.HoverState.ForeColor = Color.White;
             btnDiscoverServer.HoverState.BorderColor = clrPrimaryGreen;
 
-            var lblSrvTitle = MakeLabel("Máy chủ kết nối", 18, 17, 10F, FontStyle.Bold, clrPrimaryGreen, Math.Max(100, btnDiscoverServer.Left - 26));
+            var lblSrvTitle = MakeLabel("Máy chủ kết nối", 18, 17, 10F, FontStyle.Bold, accentText, Math.Max(100, btnDiscoverServer.Left - 26));
             lblSrvTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             var lblSrvSub = MakeLabel("Nhập IP/Domain hoặc bấm Dò Server LAN (UDP 8889)", 18, 49, 8.4F, FontStyle.Regular, clrTextMuted, w - 36);
@@ -345,13 +346,13 @@ namespace PocketLog.Client
             btnTogglePass.ImageOffset = Point.Empty;
             btnTogglePass.HoverState.FillColor = clrSoftGreenBg;
             btnTogglePass.HoverState.BorderColor = clrSoftGreenBorder;
-            btnTogglePass.Disposed += (s, e) => { try { btnTogglePass.Image?.Dispose(); } catch { } };
+            AttachControlImageDisposal(btnTogglePass);
             uiToolTip.SetToolTip(btnTogglePass, "Hiện mật khẩu");
 
             passRow.Controls.Add(txtPassword, 0, 0);
             passRow.Controls.Add(btnTogglePass, 1, 0);
 
-            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ)", 18, 246, 9.5F, FontStyle.Bold, clrIndigo, w - 36);
+            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ)", 18, 246, 9.5F, FontStyle.Bold, accentText, w - 36);
             lblInitBudget.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             var txtInitBudget = MakeTextBox("3500000", "Ví dụ: 3500000", 18, 274, w - 36, 42, clrCardBg, true);
             txtInitBudget.Name = "txtInitBudget";
@@ -396,7 +397,7 @@ namespace PocketLog.Client
                 isPasswordShown = show;
                 txtPassword.PasswordChar = show ? '\0' : '●';
                 Image oldEye = btnTogglePass.Image;
-                btnTogglePass.Image = CreateVectorIcon(show ? UiIcon.EyeOff : UiIcon.Eye, show ? clrPrimaryGreen : clrIndigo, 18);
+                btnTogglePass.Image = CreateVectorIcon(show ? UiIcon.EyeOff : UiIcon.Eye, show ? accentText : clrIndigo, 18);
                 btnTogglePass.BorderColor = show ? clrSoftGreenBorder : clrBorderLight;
                 btnTogglePass.FillColor = show ? clrSoftGreenBg : clrInputBg;
                 oldEye?.Dispose();
@@ -449,41 +450,6 @@ namespace PocketLog.Client
                     }
                 }
                 col.Height = y + cardAuth.Height + 20;
-                SyncAuthScrollWidth();
-            }
-
-            void SyncAuthScrollWidth()
-            {
-                if (page.IsDisposed || col.IsDisposed) return;
-                int availW = page.ClientSize.Width;
-                if (availW <= 0) return;
-
-                bool needsVScroll = col.Height > page.ClientSize.Height;
-                int vBarReserve = (needsVScroll && !page.VerticalScroll.Visible)
-                    ? Math.Max(SystemInformation.VerticalScrollBarWidth, (int)Math.Ceiling(18.0 * page.DeviceDpi / 96.0))
-                    : 0;
-                int effectiveW = Math.Max(260, availW - vBarReserve);
-                int sidePad = effectiveW < 450 ? 10 : 16;
-                int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
-                int targetX = Math.Max(sidePad, (effectiveW - targetW) / 2);
-
-                if (col.Left != targetX || col.Width != targetW)
-                {
-                    col.Location = new Point(targetX, page.AutoScrollPosition.Y);
-                    col.Width = targetW;
-                }
-
-                if (page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width && page.IsHandleCreated)
-                {
-                    page.BeginInvoke(new Action(() =>
-                    {
-                        if (!page.IsDisposed && !col.IsDisposed && page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width)
-                        {
-                            page.HorizontalScroll.Value = 0;
-                            page.PerformLayout();
-                        }
-                    }));
-                }
             }
 
             btnTogglePass.Click += (s, e) => ApplyPasswordVisibility(!isPasswordShown);
@@ -493,9 +459,11 @@ namespace PocketLog.Client
                 btnDiscoverServer.Enabled = false;
                 btnDiscoverServer.Text = "Đang dò...";
                 lblAuthStatus.Text = "Đang dò tìm Server qua UDP Broadcast (Port 8889)...";
-                lblAuthStatus.ForeColor = clrPrimaryGreen;
+                lblAuthStatus.ForeColor = accentText;
 
                 var found = await DiscoverServerViaUdpAsync();
+                if (page.IsDisposed || btnDiscoverServer.IsDisposed) return;
+
                 if (found.Success)
                 {
                     txtServerIp.Text = found.Ip;
@@ -542,16 +510,18 @@ namespace PocketLog.Client
 
                 btnSubmitAuth.Enabled = false;
                 lblAuthStatus.Text = $"Đang kết nối tới {ip}:{port}...";
-                lblAuthStatus.ForeColor = clrPrimaryGreen;
+                lblAuthStatus.ForeColor = accentText;
 
                 onAuthFailedUI = (errMsg) =>
                 {
+                    if (lblAuthStatus.IsDisposed || btnSubmitAuth.IsDisposed) return;
                     lblAuthStatus.Text = errMsg;
                     lblAuthStatus.ForeColor = clrRedDanger;
                     btnSubmitAuth.Enabled = true;
                 };
 
                 bool ok = await ConnectAndAuthenticateAsync(ip, port, user, pass, isRegisterMode, txtInitBudget.Text, lblAuthStatus);
+                if (page.IsDisposed || btnSubmitAuth.IsDisposed) return;
                 if (!ok)
                 {
                     btnSubmitAuth.Enabled = true;
@@ -570,8 +540,6 @@ namespace PocketLog.Client
             col.Height = y + cardAuth.Height + 20;
             AttachEdgeResizeRedirector(cardServer);
             AttachEdgeResizeRedirector(cardAuth);
-            page.Resize += (s, e) => SyncAuthScrollWidth();
-            page.Layout += (s, e) => SyncAuthScrollWidth();
 
             authDraftCapture = () =>
             {
@@ -592,6 +560,8 @@ namespace PocketLog.Client
             {
                 if (txtServerIp.IsDisposed || txtPassword.IsDisposed)
                     return;
+                if (draft.Ip == null && draft.User == null && draft.Pass == null)
+                    return;
                 txtServerIp.Text = draft.Ip ?? "";
                 txtServerPort.Text = draft.Port ?? "";
                 txtUsername.Text = draft.User ?? "";
@@ -602,7 +572,6 @@ namespace PocketLog.Client
             };
 
             SetMainScreen(page);
-            SyncAuthScrollWidth();
         }
 
         private async Task<(bool Success, string Ip, int Port, string HostName)> DiscoverServerViaUdpAsync()
@@ -725,8 +694,11 @@ namespace PocketLog.Client
                 if (await Task.WhenAny(connectTask, timeoutTask) == timeoutTask)
                 {
                     CloseCurrentSocket();
-                    lblStatus.Text = $"Không tìm thấy Server tại {ip}:{port}.";
-                    lblStatus.ForeColor = clrRedDanger;
+                    if (lblStatus != null && !lblStatus.IsDisposed)
+                    {
+                        lblStatus.Text = $"Không tìm thấy Server tại {ip}:{port}.";
+                        lblStatus.ForeColor = clrRedDanger;
+                    }
                     return false;
                 }
 
@@ -757,8 +729,11 @@ namespace PocketLog.Client
             catch (Exception ex)
             {
                 CloseCurrentSocket();
-                lblStatus.Text = "Lỗi kết nối: " + ex.Message;
-                lblStatus.ForeColor = clrRedDanger;
+                if (lblStatus != null && !lblStatus.IsDisposed)
+                {
+                    lblStatus.Text = "Lỗi kết nối: " + ex.Message;
+                    lblStatus.ForeColor = clrRedDanger;
+                }
                 return false;
             }
         }

@@ -118,7 +118,8 @@ namespace PocketLog.Client
 
             pnlFriendsDrawer.FillColor = clrCardBg;
             pnlFriendsDrawer.BorderColor = clrBorderLight;
-            pnlFriendsDrawer.Controls.Add(MakeSoftIconBadge(UiIcon.Users, 16, 14, 34, 11, clrSoftGreenBg, clrPrimaryGreen));
+            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
+            pnlFriendsDrawer.Controls.Add(MakeSoftIconBadge(UiIcon.Users, 16, 14, 34, 11, clrSoftGreenBg, accentText));
 
             var btnClose = MakeBtn("", dw - 48, 13, 34, 34, 12, clrInputBg, clrTextMain, clrBorderLight, 1);
             btnClose.Anchor = AnchorStyles.Top | AnchorStyles.Right;
@@ -126,12 +127,12 @@ namespace PocketLog.Client
             btnClose.ImageSize = new Size(15, 15);
             btnClose.HoverState.FillColor = clrSoftRedBg;
             btnClose.HoverState.BorderColor = clrRedDanger;
-            btnClose.Disposed += (s, e) => { try { btnClose.Image?.Dispose(); } catch { } };
+            AttachControlImageDisposal(btnClose);
             btnClose.Click += (s, e) => CloseFriendsDrawer();
             pnlFriendsDrawer.Controls.Add(btnClose);
 
             var lblHead = MakeLabel("Bạn bè của bạn", 58, 18, 11F, FontStyle.Bold, clrTextMain, Math.Max(100, btnClose.Left - 66));
-            lblHead.Font = FontBold(11F);
+            SetControlFont(lblHead, FontBold(11F));
             lblHead.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             pnlFriendsDrawer.Controls.Add(lblHead);
 
@@ -182,7 +183,7 @@ namespace PocketLog.Client
                     .Where(f => string.IsNullOrEmpty(q) || f.Name.ToLower().Contains(q) || f.Handle.ToLower().Contains(q))
                     .ToList();
 
-                listScroll.Controls.Add(MakeLabel($"Đã kết nối ({filteredFriends.Count})", 4, y, 8.8F, FontStyle.Bold, clrPrimaryGreen, rowW));
+                listScroll.Controls.Add(MakeLabel($"Đã kết nối ({filteredFriends.Count})", 4, y, 8.8F, FontStyle.Bold, accentText, rowW));
                 y += 28;
 
                 if (filteredFriends.Count == 0)
@@ -258,7 +259,7 @@ namespace PocketLog.Client
                 UseTransparentBackground = true
             };
 
-            string initial = string.IsNullOrEmpty(u.Name) ? "U" : u.Name.Substring(0, 1).ToUpper();
+            string initial = GetAvatarInitial(u.Name);
             var avtHost = new Panel
             {
                 Size = new Size(46, 46),

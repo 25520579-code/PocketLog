@@ -40,6 +40,7 @@ namespace PocketLog.Client
 
         private Control BuildFeedScreen()
         {
+            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
             Panel page = CreateResponsiveScrollPage(out Panel col);
             int w = col.Width;
             int y = 14;
@@ -63,20 +64,22 @@ namespace PocketLog.Client
             btnFriendsTop.HoverState.FillColor = clrSoftGreenBg;
             btnFriendsTop.HoverState.BorderColor = clrSoftGreenBorder;
             AttachBtnIcon(btnFriendsTop, UiIcon.Users, clrIndigo, 15);
+            AttachControlImageDisposal(btnFriendsTop);
             AttachEdgeResizeRedirector(btnFriendsTop);
             btnFriendsTop.Click += (s, e) => OpenFriendsDrawer();
 
             int galBtnW = Math.Max(104, MeasurePillBtnWidth(galText, 8.2F, 18, true, 15));
-            var btnGallery = MakeBtn(galText, w - frBtnW - 6 - galBtnW, 3, galBtnW, 36, 18, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.2F);
+            var btnGallery = MakeBtn(galText, w - frBtnW - 6 - galBtnW, 3, galBtnW, 36, 18, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
             btnGallery.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnGallery.HoverState.FillColor = clrCardBg;
             btnGallery.HoverState.BorderColor = clrPrimaryGreen;
-            AttachBtnIcon(btnGallery, UiIcon.Photo, clrPrimaryGreen, 15);
+            AttachBtnIcon(btnGallery, UiIcon.Photo, accentText, 15);
+            AttachControlImageDisposal(btnGallery);
             AttachEdgeResizeRedirector(btnGallery);
             btnGallery.Click += (s, e) => OpenMyGalleryScreen();
 
             var lblTitle = MakeLabel("Bảng tin", 2, 5, 12.2F, FontStyle.Bold, clrTextMain, Math.Max(70, btnGallery.Left - 8));
-            lblTitle.Font = FontBold(12.2F);
+            SetControlFont(lblTitle, FontBold(12.2F));
             lblTitle.Height = TextRenderer.MeasureText("Ág", lblTitle.Font).Height + 4;
             lblTitle.Top = Math.Max(2, (42 - lblTitle.Height) / 2);
             lblTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -125,7 +128,7 @@ namespace PocketLog.Client
                     "Bạn chưa đăng khoảnh khắc nào",
                     "Chạm vào đây để mở Chụp ảnh và chia sẻ ngay",
                     clrSoftGreenBorder,
-                    clrPrimaryGreen,
+                    accentText,
                     () => EnsureTabVisible("CAMERA"));
                 emptyMine.Location = new Point(0, y);
                 col.Controls.Add(emptyMine);
@@ -193,13 +196,13 @@ namespace PocketLog.Client
             }
 
             col.Height = y + 20;
-            AttachFeedScrollWidthGuard(page, col);
             return page;
         }
 
         private Guna2Panel CreateLocketPostCard(LocketPost post, bool isMyTopCard, int cardWidth)
         {
             AppPalette theme = CurrentTheme;
+            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
             Guna2Panel card = new Guna2Panel
             {
                 Size = new Size(cardWidth, 474),
@@ -247,7 +250,7 @@ namespace PocketLog.Client
                     Text = timeText,
                     Dock = DockStyle.Fill,
                     Font = FontMedium(7.8F),
-                    ForeColor = isMyTopCard ? clrPrimaryGreen : clrTextMuted,
+                    ForeColor = isMyTopCard ? accentText : clrTextMuted,
                     BackColor = Color.Transparent,
                     TextAlign = ContentAlignment.MiddleCenter,
                     AutoEllipsis = true,
@@ -275,7 +278,7 @@ namespace PocketLog.Client
                 subY,
                 8.6F,
                 post.HasTag ? FontStyle.Bold : FontStyle.Regular,
-                post.HasTag ? clrPrimaryGreen : clrTextMuted,
+                post.HasTag ? accentText : clrTextMuted,
                 Math.Max(120, cardWidth - 80));
             lblSub.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
@@ -349,15 +352,32 @@ namespace PocketLog.Client
             string author = (post.Author ?? "").Trim();
             if (string.IsNullOrEmpty(author)) return null;
 
-            return myFriends.FirstOrDefault(f => f != null && (
-                string.Equals((f.Name ?? "").Trim(), author, StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrEmpty(f.Handle) && author.Contains(f.Handle, StringComparison.OrdinalIgnoreCase))));
+            string authorNoAt = author.TrimStart('@');
+            return myFriends.FirstOrDefault(f =>
+            {
+                if (f == null) return false;
+                string name = (f.Name ?? "").Trim();
+                if (!string.IsNullOrEmpty(name) && string.Equals(name, author, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                string rawHandle = (f.Handle ?? "").Trim().TrimStart('@');
+                if (string.IsNullOrEmpty(rawHandle))
+                    return false;
+
+                if (string.Equals(rawHandle, authorNoAt, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                string atToken = "@" + rawHandle;
+                return author
+                    .Split(new[] { ' ', '\t', '(', ')', ',', ';', ':' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Any(tok => string.Equals(tok, atToken, StringComparison.OrdinalIgnoreCase));
+            });
         }
 
         private Control BuildMiniAuthorAvatar(LocketPost post, FriendUser matchedFriend, bool isMyTopCard, bool isAuthorOnline)
         {
             string author = (post?.Author ?? "").Trim();
-            string initial = string.IsNullOrEmpty(author) ? "U" : author.Substring(0, 1).ToUpper();
+            string initial = GetAvatarInitial(author);
 
             var avatarHost = new FeedBufferedPanel
             {
@@ -400,13 +420,14 @@ namespace PocketLog.Client
                 }
                 else if (matchedFriend != null)
                 {
-                    Color tint = FeedAvatarTints[Math.Abs(matchedFriend.UserId) % FeedAvatarTints.Length];
+                    uint tintIdx = unchecked((uint)matchedFriend.UserId) % (uint)FeedAvatarTints.Length;
+                    Color tint = FeedAvatarTints[tintIdx];
                     innerFill = isAuthorOnline ? tint : BlendControlColor(tint, theme.TextMuted, 0.6f);
                 }
                 else
                 {
-                    int hash = Math.Abs(author.GetHashCode());
-                    Color tint = FeedAvatarTints[hash % FeedAvatarTints.Length];
+                    uint hash = unchecked((uint)author.GetHashCode()) % (uint)FeedAvatarTints.Length;
+                    Color tint = FeedAvatarTints[hash];
                     innerFill = BlendControlColor(tint, theme.TextMuted, 0.45f);
                 }
 
@@ -482,18 +503,15 @@ namespace PocketLog.Client
                     BackColor = Color.Transparent,
                     Enabled = false
                 };
-                AttachPictureBoxImageDisposal(icoPic);
+                AttachControlImageDisposal(icoPic);
                 gradBadge.Controls.Add(icoPic);
                 badge = gradBadge;
             }
             else
             {
-                var softBadge = MakeSoftIconBadge(icon, (width - 46) / 2, 18, 46, 15, clrSoftGreenBg, clrPrimaryGreen);
+                Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
+                var softBadge = MakeSoftIconBadge(icon, (width - 46) / 2, 18, 46, 15, clrSoftGreenBg, accentText);
                 softBadge.Cursor = Cursors.Hand;
-                foreach (PictureBox p in softBadge.Controls.OfType<PictureBox>().ToList())
-                {
-                    AttachPictureBoxImageDisposal(p);
-                }
                 badge = softBadge;
             }
 
@@ -521,17 +539,6 @@ namespace PocketLog.Client
             return card;
         }
 
-        private static void AttachPictureBoxImageDisposal(PictureBox pic)
-        {
-            if (pic == null) return;
-            Image capturedImg = pic.Image;
-            pic.Disposed += (s, e) =>
-            {
-                try { pic.Image?.Dispose(); } catch { }
-                try { capturedImg?.Dispose(); } catch { }
-            };
-        }
-
         private void OpenMyGalleryScreen()
         {
             isFeedShowingGallery = true;
@@ -549,32 +556,42 @@ namespace PocketLog.Client
 
         private Control BuildMyGalleryControl()
         {
+            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
             Panel page = CreateResponsiveScrollPage(out Panel col);
             int w = col.Width;
             int y = 14;
 
             var myPosts = posts.Where(p => p.IsMine).ToList();
 
+            Panel galTopBar = new Panel
+            {
+                Location = new Point(0, y),
+                Size = new Size(w, 42),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.Transparent
+            };
+            AttachEdgeResizeRedirector(galTopBar);
+
             int backW = Math.Max(188, MeasurePillBtnWidth("Quay lại Bảng tin", 8.6F, 19, true, 15));
-            var btnBack = MakeBtn("Quay lại Bảng tin", 0, y, backW, 38, 19, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.6F);
+            var btnBack = MakeBtn("Quay lại Bảng tin", 0, 2, backW, 38, 19, clrCardBg, accentText, clrSoftGreenBorder, 1, 8.6F);
             btnBack.HoverState.FillColor = clrSoftGreenBg;
             btnBack.HoverState.BorderColor = clrPrimaryGreen;
-            AttachBtnIcon(btnBack, UiIcon.ChevronLeft, clrPrimaryGreen, 15);
+            AttachBtnIcon(btnBack, UiIcon.ChevronLeft, accentText, 15);
+            AttachControlImageDisposal(btnBack);
             AttachEdgeResizeRedirector(btnBack);
             btnBack.Click += (s, e) =>
             {
                 isFeedShowingGallery = false;
                 RefreshPaneContent("FEED");
             };
-            col.Controls.Add(btnBack);
+            galTopBar.Controls.Add(btnBack);
 
             string countText = $"{myPosts.Count} khoảnh khắc";
             int countW = Math.Max(104, MeasurePillBtnWidth(countText, 8.2F, 17));
             var countChip = new Guna2Panel
             {
-                Location = new Point(Math.Max(backW + 8, w - countW), y + 2),
+                Location = new Point(Math.Max(0, w - countW), 4),
                 Size = new Size(countW, 34),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 BorderRadius = 17,
                 FillColor = clrSoftGreenBg,
                 BorderColor = clrSoftGreenBorder,
@@ -587,23 +604,24 @@ namespace PocketLog.Client
                 Text = countText,
                 Dock = DockStyle.Fill,
                 Font = FontMedium(8.2F),
-                ForeColor = clrPrimaryGreen,
+                ForeColor = accentText,
                 BackColor = Color.Transparent,
                 TextAlign = ContentAlignment.MiddleCenter,
                 AutoEllipsis = true,
                 UseMnemonic = false
             };
             countChip.Controls.Add(lblCount);
-            col.Controls.Add(countChip);
-            y += 48;
+            galTopBar.Controls.Add(countChip);
+            col.Controls.Add(galTopBar);
 
-            var lblTitle = MakeLabel($"Kho ảnh của {currentFullName}", 2, y, 12F, FontStyle.Bold, clrTextMain, Math.Max(140, w - 8));
-            lblTitle.Font = FontBold(12F);
+            var lblTitle = MakeLabel($"Kho ảnh của {currentFullName}", 2, 0, 12F, FontStyle.Bold, clrTextMain, Math.Max(140, w - 8));
+            SetControlFont(lblTitle, FontBold(12F));
             lblTitle.Height = TextRenderer.MeasureText("Ág", lblTitle.Font).Height + 4;
             lblTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             col.Controls.Add(lblTitle);
-            y += lblTitle.Height + 10;
 
+            Control bodyControl;
+            int bodyBottomMargin;
             if (myPosts.Count == 0)
             {
                 var emptyGalCard = CreateEmptyHeroCard(
@@ -613,11 +631,12 @@ namespace PocketLog.Client
                     "Chưa có tấm ảnh nào trong kho lưu trữ",
                     "Chạm vào đây để mở tab Chụp ảnh và lưu khoảnh khắc đầu tiên",
                     clrSoftGreenBorder,
-                    clrPrimaryGreen,
+                    accentText,
                     () => EnsureTabVisible("CAMERA"));
-                emptyGalCard.Location = new Point(0, y);
+                emptyGalCard.Location = new Point(0, 0);
                 col.Controls.Add(emptyGalCard);
-                y += emptyGalCard.Height + 16;
+                bodyControl = emptyGalCard;
+                bodyBottomMargin = 16;
             }
             else
             {
@@ -639,7 +658,7 @@ namespace PocketLog.Client
                 int rows = (myPosts.Count + 1) / 2;
                 var grid = new BufferedTableLayout
                 {
-                    Location = new Point(0, y),
+                    Location = new Point(0, 0),
                     Size = new Size(w, rows * rowHeight),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     ColumnCount = 2,
@@ -704,7 +723,7 @@ namespace PocketLog.Client
                         line1Y,
                         8.8F,
                         FontStyle.Bold,
-                        item.HasTag ? clrPrimaryGreen : clrIndigo,
+                        item.HasTag ? accentText : clrIndigo,
                         catAvailW);
                     l1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
@@ -744,54 +763,38 @@ namespace PocketLog.Client
                 }
 
                 col.Controls.Add(grid);
-                y += rows * rowHeight;
+                bodyControl = grid;
+                bodyBottomMargin = 20;
             }
 
-            col.Height = y + 20;
-            AttachFeedScrollWidthGuard(page, col);
-            return page;
-        }
-
-        private void AttachFeedScrollWidthGuard(Panel page, Panel col)
-        {
-            void SyncScrollWidth()
+            void LayoutGalleryTopBar()
             {
-                if (page.IsDisposed || col.IsDisposed) return;
-                int availW = page.ClientSize.Width;
-                if (availW <= 0) return;
-
-                bool needsVScroll = col.Height > page.ClientSize.Height;
-                int vBarReserve = (needsVScroll && !page.VerticalScroll.Visible)
-                    ? Math.Max(SystemInformation.VerticalScrollBarWidth, (int)Math.Ceiling(18.0 * page.DeviceDpi / 96.0))
-                    : 0;
-                int effectiveW = Math.Max(260, availW - vBarReserve);
-                int sidePad = effectiveW < 450 ? 10 : 16;
-                int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
-                int targetX = Math.Max(sidePad, (effectiveW - targetW) / 2);
-
-                if (col.Left != targetX || col.Width != targetW)
+                if (galTopBar.IsDisposed || col.IsDisposed) return;
+                int tw = galTopBar.Width;
+                const int gap = 8;
+                if (backW + gap + countW <= tw)
                 {
-                    col.Location = new Point(targetX, page.AutoScrollPosition.Y);
-                    col.Width = targetW;
+                    galTopBar.Height = 42;
+                    btnBack.SetBounds(0, 2, backW, 38);
+                    countChip.SetBounds(tw - countW, 4, countW, 34);
+                }
+                else
+                {
+                    int bw = Math.Min(backW, tw);
+                    int cw = Math.Min(countW, tw);
+                    galTopBar.Height = 82;
+                    btnBack.SetBounds(0, 2, bw, 38);
+                    countChip.SetBounds(Math.Max(0, tw - cw), 44, cw, 34);
                 }
 
-                if (page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width && page.IsHandleCreated)
-                {
-                    page.BeginInvoke(new Action(() =>
-                    {
-                        if (!page.IsDisposed && !col.IsDisposed && page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width)
-                        {
-                            page.HorizontalScroll.Value = 0;
-                            page.PerformLayout();
-                        }
-                    }));
-                }
+                lblTitle.Top = galTopBar.Bottom + 6;
+                bodyControl.Top = lblTitle.Bottom + 10;
+                col.Height = bodyControl.Bottom + bodyBottomMargin;
             }
 
-            page.Resize += (s, e) => SyncScrollWidth();
-            page.Layout += (s, e) => SyncScrollWidth();
-            page.HandleCreated += (s, e) => SyncScrollWidth();
-            SyncScrollWidth();
+            galTopBar.Resize += (s, e) => LayoutGalleryTopBar();
+            LayoutGalleryTopBar();
+            return page;
         }
     }
 }
