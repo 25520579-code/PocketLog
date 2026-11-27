@@ -361,3 +361,11 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Standalone published client bundle for sharing
+PocketLog_Client_Win64/
+PocketLog_Client_Win64.zip
+
+# Isolated git worktrees and SDD workspace artifacts
+.worktrees/
+.superpowers/
