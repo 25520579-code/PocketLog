@@ -1,6 +1,8 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
@@ -11,6 +13,261 @@ namespace PocketLog.Client
 {
     public partial class Client
     {
+        private sealed class WalletGradientPanel : Guna2GradientPanel
+        {
+            private readonly Client owner;
+            private int unpaidCount;
+            private Color unpaidDotColor = Color.FromArgb(244, 63, 94);
+            private int dividerX;
+            private Rectangle pillRect;
+            private string pillText = "";
+
+            public WalletGradientPanel(Client owner)
+            {
+                this.owner = owner;
+                DoubleBuffered = true;
+            }
+
+            public int UnpaidCount
+            {
+                get => unpaidCount;
+                set
+                {
+                    int safe = Math.Max(0, value);
+                    if (unpaidCount != safe)
+                    {
+                        unpaidCount = safe;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public Color UnpaidDotColor
+            {
+                get => unpaidDotColor;
+                set
+                {
+                    if (unpaidDotColor != value)
+                    {
+                        unpaidDotColor = value;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public int DividerX
+            {
+                get => dividerX;
+                set
+                {
+                    if (dividerX != value)
+                    {
+                        dividerX = value;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public Rectangle UnpaidPillBounds => pillRect;
+
+            public void UpdateBadgeLayout(int divX, Rectangle badgeBounds, string badgeLabel)
+            {
+                dividerX = divX;
+                pillRect = badgeBounds;
+                pillText = badgeLabel ?? "";
+                Invalidate();
+            }
+
+            protected override void OnPaintBackground(PaintEventArgs e)
+            {
+                base.OnPaintBackground(e);
+                if (Width <= 4 || Height <= 4) return;
+
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+                var rect = new RectangleF(0.5f, 0.5f, Math.Max(2f, Width - 1f), Math.Max(2f, Height - 1f));
+                using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, BorderRadius);
+                using var grad = new LinearGradientBrush(rect, FillColor, FillColor2, LinearGradientMode.ForwardDiagonal);
+                grad.WrapMode = WrapMode.TileFlipXY;
+                g.FillPath(grad, path);
+
+                PaintDecorativeGlows(g, path);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                base.OnPaint(e);
+                if (Width <= 4 || Height <= 4) return;
+
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                var rect = new RectangleF(0.5f, 0.5f, Math.Max(2f, Width - 1f), Math.Max(2f, Height - 1f));
+                using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, BorderRadius);
+
+                PaintDecorativeGlows(g, path);
+
+                GraphicsState saved = g.Save();
+                g.SetClip(path, CombineMode.Intersect);
+
+                if (dividerX > 40 && dividerX < Width - 40)
+                {
+                    using var divPen = new Pen(Color.FromArgb(68, 255, 255, 255), 1f);
+                    g.DrawLine(divPen, dividerX, 16f, dividerX, Height - 16f);
+                }
+
+                if (unpaidCount > 0 && pillRect.Width >= 24 && pillRect.Height >= 16 && !string.IsNullOrEmpty(pillText))
+                {
+                    using GraphicsPath pPath = CreateRoundedPath(pillRect.X, pillRect.Y, pillRect.Width, pillRect.Height, pillRect.Height / 2f);
+                    using var pFill = new SolidBrush(Color.FromArgb(64, 15, 23, 42));
+                    using var pBorder = new Pen(Color.FromArgb(95, 255, 255, 255), 1f);
+                    g.FillPath(pFill, pPath);
+                    g.DrawPath(pBorder, pPath);
+
+                    const int dotSize = 6;
+                    float dotX = pillRect.X + 7f;
+                    float dotY = pillRect.Y + (pillRect.Height - dotSize) / 2f;
+                    Color dotClr = unpaidDotColor.A == 0 ? Color.FromArgb(244, 63, 94) : unpaidDotColor;
+                    using (var dotBrush = new SolidBrush(dotClr))
+                    {
+                        g.FillEllipse(dotBrush, dotX, dotY, dotSize, dotSize);
+                    }
+
+                    using Font pillFont = owner != null ? owner.FontMedium(7.4F) : new Font("Segoe UI", 7.4F, FontStyle.Bold);
+                    var textRect = new Rectangle(
+                        pillRect.X + 14,
+                        pillRect.Y,
+                        Math.Max(12, pillRect.Width - 18),
+                        pillRect.Height);
+                    TextRenderer.DrawText(
+                        g,
+                        pillText,
+                        pillFont,
+                        textRect,
+                        Color.White,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                }
+
+                g.Restore(saved);
+
+                using var sheenPen = new Pen(Color.FromArgb(42, 255, 255, 255), 1f);
+                g.DrawPath(sheenPen, path);
+            }
+
+            private void PaintDecorativeGlows(Graphics g, GraphicsPath clipPath)
+            {
+                GraphicsState saved = g.Save();
+                g.SetClip(clipPath, CombineMode.Intersect);
+                using (var glowTop = new SolidBrush(Color.FromArgb(20, 255, 255, 255)))
+                using (var glowBot = new SolidBrush(Color.FromArgb(12, 255, 255, 255)))
+                {
+                    g.FillEllipse(glowTop, Width - 88, -32, 118, 118);
+                    g.FillEllipse(glowBot, -24, Height - 44, 92, 92);
+                }
+                g.Restore(saved);
+            }
+        }
+
+        private static Guna2Panel AttachSoftBadgeDisposal(Guna2Panel badge)
+        {
+            if (badge == null) return null;
+            foreach (PictureBox pic in badge.Controls.OfType<PictureBox>().ToList())
+            {
+                Image capturedImg = pic.Image;
+                pic.Disposed += (s, e) =>
+                {
+                    try
+                    {
+                        Image current = pic.Image;
+                        pic.Image = null;
+                        current?.Dispose();
+                    }
+                    catch { }
+                    try { capturedImg?.Dispose(); } catch { }
+                };
+            }
+            return badge;
+        }
+
+        private static void AttachControlImageDisposal(Control ctrl, Func<Image> getImg, Action<Image> setImg)
+        {
+            if (ctrl == null) return;
+            ctrl.Disposed += (s, e) =>
+            {
+                try
+                {
+                    Image current = getImg();
+                    setImg(null);
+                    current?.Dispose();
+                }
+                catch { }
+            };
+        }
+
+        private static string GetShortDisplayName(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName)) return "bạn";
+            var parts = fullName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length > 0 ? parts[parts.Length - 1] : fullName.Trim();
+        }
+
+        private static void ApplyGradientButtonIcon(Guna2GradientButton btn, Bitmap iconBmp, int iconPx = 15)
+        {
+            if (btn == null) return;
+            Image old = btn.Image;
+            btn.Image = iconBmp;
+            btn.ImageSize = new Size(iconPx, iconPx);
+            btn.ImageAlign = HorizontalAlignment.Center;
+            btn.ImageOffset = new Point(-2, 0);
+            btn.TextOffset = new Point(2, 0);
+            old?.Dispose();
+        }
+
+        private void AttachExpenseScrollWidthGuard(Panel page, Panel col)
+        {
+            void SyncScrollWidth()
+            {
+                if (page.IsDisposed || col.IsDisposed) return;
+                int availW = page.ClientSize.Width;
+                if (availW <= 0) return;
+
+                bool needsVScroll = col.Height > page.ClientSize.Height;
+                int vBarReserve = (needsVScroll && !page.VerticalScroll.Visible)
+                    ? Math.Max(SystemInformation.VerticalScrollBarWidth, (int)Math.Ceiling(18.0 * page.DeviceDpi / 96.0))
+                    : 0;
+                int effectiveW = Math.Max(260, availW - vBarReserve);
+                int sidePad = effectiveW < 450 ? 10 : 16;
+                int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
+                int targetX = Math.Max(sidePad, (effectiveW - targetW) / 2);
+
+                if (col.Left != targetX || col.Width != targetW)
+                {
+                    col.Location = new Point(targetX, page.AutoScrollPosition.Y);
+                    col.Width = targetW;
+                }
+
+                if (page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width && page.IsHandleCreated)
+                {
+                    page.BeginInvoke(new Action(() =>
+                    {
+                        if (!page.IsDisposed && !col.IsDisposed && page.HorizontalScroll.Visible && col.Right <= page.ClientSize.Width)
+                        {
+                            page.HorizontalScroll.Value = 0;
+                            page.PerformLayout();
+                        }
+                    }));
+                }
+            }
+
+            page.Resize += (s, e) => SyncScrollWidth();
+            page.Layout += (s, e) => SyncScrollWidth();
+            page.HandleCreated += (s, e) => SyncScrollWidth();
+            SyncScrollWidth();
+        }
         private int CalculatePersonalSpentByCategory(string categoryName)
         {
             int myPostsShare = 0;
@@ -49,6 +306,11 @@ namespace PocketLog.Client
 
         private Control BuildExpenseScreen()
         {
+            AppPalette theme = CurrentTheme;
+            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
+            Color softTextInk = isDarkMode ? clrTextMain : clrPrimaryGreen;
+            Color positiveColor = theme.Success;
+
             Panel page = CreateResponsiveScrollPage(out Panel col);
             int w = col.Width;
             int y = 12;
@@ -61,50 +323,113 @@ namespace PocketLog.Client
                                          ?? unpaidList.FirstOrDefault()
                                          ?? taggedDebts.FirstOrDefault();
 
-            // Thẻ tổng quan công nợ chia 2 cột hiện đại
-            Guna2Panel pnlBanner = new Guna2Panel
+            // Thẻ tổng quan công nợ Gradient chéo 88px (WalletGradStart -> WalletGradEnd)
+            var pnlBanner = new WalletGradientPanel(this)
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 80),
+                Size = new Size(w, 88),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 22,
-                FillColor = Color.FromArgb(30, 41, 59),
-                UseTransparentBackground = true
+                BorderRadius = 24,
+                FillColor = theme.WalletGradStart,
+                FillColor2 = theme.WalletGradEnd,
+                GradientMode = LinearGradientMode.ForwardDiagonal,
+                BackColor = Color.Transparent,
+                UseTransparentBackground = true,
+                UnpaidCount = unpaidList.Count,
+                UnpaidDotColor = theme.Danger,
+                Cursor = unpaidList.Count > 0 ? Cursors.Hand : Cursors.Default
             };
+            AttachEdgeResizeRedirector(pnlBanner);
 
-            var bannerGrid = new BufferedTableLayout
+            Color bannerTitleColor = Color.FromArgb(214, 222, 255);
+            Color oweValueColor = totalIOwe > 0 ? Color.FromArgb(254, 205, 211) : Color.White;
+            Color owedValueColor = totalOwedToMe > 0 ? Color.FromArgb(167, 243, 208) : Color.White;
+
+            var lblOweTitle = MakeLabel("Bạn đang nợ", 18, 15, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
+            var lblOweVal = MakeLabel($"{totalIOwe:N0}đ", 18, 41, 12.2F, FontStyle.Bold, oweValueColor, 150);
+            lblOweVal.Font = FontBold(12.2F);
+            lblOweVal.Height = TextRenderer.MeasureText("Ág", lblOweVal.Font).Height + 4;
+
+            var lblOwedTitle = MakeLabel("Bạn bè nợ bạn", 200, 15, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
+            var lblOwedVal = MakeLabel($"{totalOwedToMe:N0}đ", 200, 41, 12.2F, FontStyle.Bold, owedValueColor, 150);
+            lblOwedVal.Font = FontBold(12.2F);
+            lblOwedVal.Height = TextRenderer.MeasureText("Ág", lblOwedVal.Font).Height + 4;
+
+            void LayoutBanner()
             {
-                Location = new Point(14, 10),
-                Size = new Size(w - 28, 60),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                ColumnCount = 3,
-                RowCount = 1
-            };
-            bannerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 49.5F));
-            bannerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 1F));
-            bannerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50.5F));
-            bannerGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                if (pnlBanner.IsDisposed) return;
+                int bw = pnlBanner.Width;
+                if (bw <= 120) return;
 
-            Panel colLeft = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
-            colLeft.Controls.Add(MakeLabel("Bạn đang nợ", 6, 4, 8.8F, FontStyle.Regular, Color.FromArgb(148, 163, 184)));
-            var lblOweVal = MakeLabel($"{totalIOwe:N0}đ", 6, 26, 11.5F, FontStyle.Bold, totalIOwe > 0 ? Color.FromArgb(253, 164, 175) : Color.White);
-            lblOweVal.Font = FontBold(11.5F);
-            colLeft.Controls.Add(lblOweVal);
+                double splitRatio = bw < 450 ? 0.415 : 0.465;
+                int minDiv = Math.Min(120, bw / 2);
+                int maxDiv = Math.Max(minDiv, bw - 120);
+                int divX = Math.Clamp((int)Math.Round(bw * splitRatio), minDiv, maxDiv);
+                int leftW = Math.Max(64, divX - 28);
+                int rightX = divX + 12;
+                int rightMaxW = Math.Max(64, bw - rightX - 14);
 
-            Panel dividerMid = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 8), BackColor = Color.FromArgb(51, 65, 85) };
+                lblOweTitle.Location = new Point(18, 15);
+                lblOweTitle.Width = leftW;
+                lblOweVal.Location = new Point(18, 41);
+                lblOweVal.Width = leftW;
 
-            Panel colRight = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
-            colRight.Controls.Add(MakeLabel("Bạn bè nợ bạn", 12, 4, 8.8F, FontStyle.Regular, Color.FromArgb(148, 163, 184)));
-            var lblOwedVal = MakeLabel($"{totalOwedToMe:N0}đ", 12, 26, 11.5F, FontStyle.Bold, totalOwedToMe > 0 ? Color.FromArgb(125, 211, 252) : Color.White);
-            lblOwedVal.Font = FontBold(11.5F);
-            colRight.Controls.Add(lblOwedVal);
+                Rectangle pillBounds = Rectangle.Empty;
+                string badgeLabel = "";
+                int owedTitleWidth = rightMaxW;
 
-            bannerGrid.Controls.Add(colLeft, 0, 0);
-            bannerGrid.Controls.Add(dividerMid, 1, 0);
-            bannerGrid.Controls.Add(colRight, 2, 0);
-            pnlBanner.Controls.Add(bannerGrid);
+                if (unpaidList.Count > 0)
+                {
+                    using Font owedF = lblOwedTitle.Font;
+                    using Font pillF = FontMedium(7.4F);
+                    int owedTextW = TextRenderer.MeasureText("Bạn bè nợ bạn", owedF, new Size(400, 40), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+
+                    string fullPill = $"{unpaidList.Count} bill chờ";
+                    string compactPill = $"{unpaidList.Count} chờ";
+                    int fullPillW = TextRenderer.MeasureText(fullPill, pillF, new Size(200, 30), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width + 20;
+                    int compactPillW = TextRenderer.MeasureText(compactPill, pillF, new Size(200, 30), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width + 20;
+
+                    int availPillW = rightMaxW - owedTextW - 6;
+                    int chosenPillW;
+                    if (availPillW >= fullPillW)
+                    {
+                        badgeLabel = fullPill;
+                        chosenPillW = fullPillW;
+                    }
+                    else
+                    {
+                        badgeLabel = compactPill;
+                        chosenPillW = Math.Min(compactPillW, Math.Max(44, availPillW));
+                    }
+
+                    pillBounds = new Rectangle(bw - 14 - chosenPillW, 12, chosenPillW, 22);
+                    owedTitleWidth = Math.Max(68, pillBounds.Left - rightX - 4);
+                }
+
+                lblOwedTitle.Location = new Point(rightX, 15);
+                lblOwedTitle.Width = owedTitleWidth;
+                lblOwedVal.Location = new Point(rightX, 41);
+                lblOwedVal.Width = rightMaxW;
+
+                pnlBanner.UpdateBadgeLayout(divX, pillBounds, badgeLabel);
+            }
+
+            pnlBanner.Controls.AddRange(new Control[] { lblOweTitle, lblOweVal, lblOwedTitle, lblOwedVal });
+            pnlBanner.Resize += (s, e) => LayoutBanner();
+            if (unpaidList.Count > 0)
+            {
+                pnlBanner.MouseClick += (s, e) =>
+                {
+                    if (pnlBanner.UnpaidPillBounds.Contains(e.Location))
+                    {
+                        isUnpaidDropdownOpen = !isUnpaidDropdownOpen;
+                        RefreshPaneContent("EXPENSE");
+                    }
+                };
+            }
+            LayoutBanner();
             col.Controls.Add(pnlBanner);
-            y += 94;
+            y += 102;
 
             if (currentDebt != null)
             {
@@ -119,6 +444,7 @@ namespace PocketLog.Client
                     BorderThickness = 1,
                     UseTransparentBackground = true
                 };
+                AttachEdgeResizeRedirector(cardActiveDebt);
 
                 bool isDebtor = (currentDebt.DebtorId == currentUserId);
                 string roleDesc = isDebtor
@@ -128,17 +454,30 @@ namespace PocketLog.Client
                 var lblDebtTitle = MakeLabel($"Khoản chia: {currentDebt.Title}", 16, 12, 10.2F, FontStyle.Bold, clrTextMain, w - 32);
                 lblDebtTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-                var lblDebtRole = MakeLabel($"{roleDesc}  •  Phần chia: {currentDebt.MyShare:N0}đ", 16, 40, 9.2F, FontStyle.Bold, isDebtor ? clrRedDanger : clrPrimaryGreen, w - 32);
+                var lblDebtRole = MakeLabel(
+                    $"{roleDesc}  •  Phần chia: {currentDebt.MyShare:N0}đ",
+                    16, 40, 9.2F, FontStyle.Bold,
+                    isDebtor ? clrRedDanger : positiveColor,
+                    w - 32);
                 lblDebtRole.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 string stateTxt = currentDebt.IsConfirmedPaid ? "Đã hoàn thành" : (currentDebt.IsSentProof ? "Chờ xác nhận" : "Chưa thanh toán");
-                int stateBadgeW = Math.Max(152, MeasurePillBtnWidth(stateTxt, 8.2F, 15));
-                var badgeState = MakeBtn(
-                    stateTxt,
-                    16, 68, stateBadgeW, 30, 15,
-                    currentDebt.IsConfirmedPaid ? clrSoftGreenBg : clrAppBg,
-                    currentDebt.IsConfirmedPaid ? clrPrimaryGreen : clrIndigo,
-                    Color.Transparent, 0, 8.2F);
+                Color stateBg = currentDebt.IsConfirmedPaid
+                    ? (isDarkMode ? Color.FromArgb(16, 62, 46) : Color.FromArgb(220, 252, 231))
+                    : (currentDebt.IsSentProof ? clrSoftGreenBg : clrSoftRedBg);
+                Color stateFore = currentDebt.IsConfirmedPaid
+                    ? positiveColor
+                    : (currentDebt.IsSentProof ? accentText : clrRedDanger);
+                Color stateBorder = currentDebt.IsConfirmedPaid
+                    ? (isDarkMode ? Color.FromArgb(32, 110, 82) : Color.FromArgb(167, 243, 208))
+                    : (currentDebt.IsSentProof ? clrSoftGreenBorder : (isDarkMode ? Color.FromArgb(136, 19, 55) : Color.FromArgb(254, 205, 211)));
+
+                int stateBadgeW = Math.Max(148, MeasurePillBtnWidth(stateTxt, 8.2F, 15));
+                var badgeState = MakeBtn(stateTxt, 16, 68, stateBadgeW, 30, 15, stateBg, stateFore, stateBorder, 1, 8.2F);
+                badgeState.Cursor = Cursors.Default;
+                badgeState.TabStop = false;
+                badgeState.HoverState.FillColor = stateBg;
+                badgeState.HoverState.BorderColor = stateBorder;
 
                 int noteLeft = badgeState.Right + 10;
                 Label lblNote = MakeLabel(currentDebt.StatusNote, noteLeft, 72, 8.2F, FontStyle.Regular, clrTextMuted, Math.Max(80, w - noteLeft - 16));
@@ -149,7 +488,7 @@ namespace PocketLog.Client
                 Guna2Panel pnlBillImg = new Guna2Panel
                 {
                     Location = new Point(16, 108),
-                    Size = new Size(150, 144),
+                    Size = new Size(132, 144),
                     BorderRadius = 14,
                     FillColor = clrInputBg,
                     BorderColor = clrBorderLight,
@@ -173,55 +512,131 @@ namespace PocketLog.Client
                     Visible = currentDebt.ProofImage == null,
                     BackColor = Color.Transparent
                 };
-                emptyProofWrap.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 56, 26, 38, 12, clrSoftGreenBg, clrPrimaryGreen));
-                emptyProofWrap.Controls.Add(new Label
+                var emptyProofBadge = AttachSoftBadgeDisposal(MakeSoftIconBadge(UiIcon.Receipt, 47, 26, 38, 12, clrSoftGreenBg, accentText));
+                var lblEmptyProof = new Label
                 {
                     Text = "Ảnh bill\nchuyển khoản",
                     Font = FontRegular(8.2F),
                     ForeColor = clrTextMuted,
                     UseMnemonic = false,
                     Location = new Point(6, 72),
-                    Size = new Size(138, 56),
+                    Size = new Size(120, 56),
                     TextAlign = ContentAlignment.TopCenter,
                     BackColor = Color.Transparent
-                });
+                };
+                emptyProofWrap.Controls.Add(emptyProofBadge);
+                emptyProofWrap.Controls.Add(lblEmptyProof);
 
                 pnlBillImg.Controls.Add(emptyProofWrap);
                 pnlBillImg.Controls.Add(picProof);
                 cardActiveDebt.Controls.Add(pnlBillImg);
 
-                int btnRightW = Math.Max(140, w - 178 - 16);
-                var btnUploadProof = MakeBtn("Gửi ảnh bill CK", 178, 108, btnRightW, 66, 16, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 9F);
-                btnUploadProof.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                AttachBtnIcon(btnUploadProof, UiIcon.Upload, clrPrimaryGreen, 16);
+                var btnUploadProof = MakeBtn("Gửi ảnh bill CK", 160, 108, Math.Max(140, w - 176), 66, 16, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.5F);
+                btnUploadProof.HoverState.FillColor = clrPrimaryGreen;
+                btnUploadProof.HoverState.ForeColor = Color.White;
+                btnUploadProof.HoverState.BorderColor = clrPrimaryGreen;
+                AttachControlImageDisposal(btnUploadProof, () => btnUploadProof.Image, img => btnUploadProof.Image = img);
 
-                var btnFriendVerify = MakeBtn("Xác nhận hoàn thành", 178, 186, btnRightW, 66, 16, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9F);
-                btnFriendVerify.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                AttachBtnIcon(btnFriendVerify, UiIcon.Check, Color.White, 16);
+                var btnFriendVerify = new Guna2GradientButton
+                {
+                    Text = "Xác nhận hoàn thành",
+                    Location = new Point(160, 186),
+                    Size = new Size(Math.Max(140, w - 176), 66),
+                    BorderRadius = 16,
+                    FillColor = theme.AccentPrimary,
+                    FillColor2 = theme.AccentSecondary,
+                    GradientMode = LinearGradientMode.ForwardDiagonal,
+                    ForeColor = Color.White,
+                    Font = FontMedium(8.5F),
+                    BackColor = Color.Transparent,
+                    UseTransparentBackground = true,
+                    AutoRoundedCorners = false,
+                    Cursor = Cursors.Hand
+                };
+                btnFriendVerify.DisabledState.FillColor = clrInputBg;
+                btnFriendVerify.DisabledState.FillColor2 = clrInputBg;
+                btnFriendVerify.DisabledState.ForeColor = clrTextMuted;
+                btnFriendVerify.DisabledState.BorderColor = clrBorderLight;
+                AttachControlImageDisposal(btnFriendVerify, () => btnFriendVerify.Image, img => btnFriendVerify.Image = img);
+
+                string uploadFullText;
+                string uploadShortText;
+                bool uploadEnabled;
+                string verifyFullText;
+                string verifyShortText;
+                bool verifyEnabled;
 
                 if (currentDebt.IsConfirmedPaid)
                 {
-                    btnUploadProof.Enabled = false;
-                    btnUploadProof.Text = "Đã đính kèm bill";
-                    btnFriendVerify.Enabled = false;
-                    btnFriendVerify.Text = "Đã tất toán xong";
+                    uploadEnabled = false;
+                    uploadFullText = "Đã đính kèm bill";
+                    uploadShortText = uploadFullText;
+                    verifyEnabled = false;
+                    verifyFullText = "Đã tất toán xong";
+                    verifyShortText = verifyFullText;
                 }
                 else if (isDebtor)
                 {
-                    btnUploadProof.Enabled = true;
-                    btnUploadProof.Text = currentDebt.IsSentProof ? "Đổi ảnh bill khác" : "Gửi ảnh bill CK";
-
-                    btnFriendVerify.Enabled = false;
-                    btnFriendVerify.Text = $"Chờ {currentDebt.CreditorName} duyệt";
+                    uploadEnabled = true;
+                    uploadFullText = currentDebt.IsSentProof ? "Đổi ảnh bill khác" : "Gửi ảnh bill CK";
+                    uploadShortText = uploadFullText;
+                    verifyEnabled = false;
+                    verifyFullText = $"Chờ {currentDebt.CreditorName} duyệt";
+                    verifyShortText = $"Chờ {GetShortDisplayName(currentDebt.CreditorName)} duyệt";
                 }
                 else
                 {
-                    btnUploadProof.Enabled = false;
-                    btnUploadProof.Text = currentDebt.IsSentProof ? $"{currentDebt.DebtorName} đã gửi bill" : $"Chờ {currentDebt.DebtorName} gửi bill";
-
-                    btnFriendVerify.Enabled = true;
-                    btnFriendVerify.Text = "Xác nhận đã trả";
+                    uploadEnabled = false;
+                    uploadFullText = currentDebt.IsSentProof ? $"{currentDebt.DebtorName} đã gửi bill" : $"Chờ {currentDebt.DebtorName} gửi bill";
+                    uploadShortText = currentDebt.IsSentProof
+                        ? $"{GetShortDisplayName(currentDebt.DebtorName)} đã gửi bill"
+                        : $"Chờ {GetShortDisplayName(currentDebt.DebtorName)} gửi bill";
+                    verifyEnabled = true;
+                    verifyFullText = "Xác nhận đã trả";
+                    verifyShortText = verifyFullText;
                 }
+
+                btnUploadProof.Enabled = uploadEnabled;
+                AttachBtnIcon(btnUploadProof, currentDebt.IsConfirmedPaid ? UiIcon.Check : UiIcon.Upload, uploadEnabled ? accentText : clrTextMuted, 15);
+
+                btnFriendVerify.Enabled = verifyEnabled;
+                btnFriendVerify.BorderThickness = verifyEnabled ? 0 : 1;
+                btnFriendVerify.BorderColor = verifyEnabled ? Color.Transparent : clrBorderLight;
+                ApplyGradientButtonIcon(btnFriendVerify, CreateVectorIcon(UiIcon.Check, verifyEnabled ? Color.White : clrTextMuted, 15), 15);
+
+                void LayoutActiveDebtCard()
+                {
+                    if (cardActiveDebt.IsDisposed) return;
+                    int cw = cardActiveDebt.Width;
+                    if (cw < 180) return;
+
+                    lblDebtTitle.Width = Math.Max(100, cw - 32);
+                    lblDebtRole.Width = Math.Max(100, cw - 32);
+
+                    int nLeft = badgeState.Right + 10;
+                    lblNote.Left = nLeft;
+                    lblNote.Width = Math.Max(70, cw - nLeft - 16);
+
+                    int imgW = cw < 440 ? 124 : 148;
+                    pnlBillImg.SetBounds(16, 108, imgW, 144);
+                    emptyProofBadge.Left = (imgW - emptyProofBadge.Width) / 2;
+                    lblEmptyProof.Size = new Size(Math.Max(60, imgW - 12), 56);
+
+                    int rightX = pnlBillImg.Right + 12;
+                    int rightW = Math.Max(120, cw - rightX - 16);
+                    btnUploadProof.SetBounds(rightX, 108, rightW, 66);
+                    btnFriendVerify.SetBounds(rightX, 186, rightW, 66);
+
+                    btnUploadProof.Text = (uploadFullText == uploadShortText || MeasurePillBtnWidth(uploadFullText, 8.5F, 16, true, 15) <= rightW)
+                        ? uploadFullText
+                        : uploadShortText;
+                    btnFriendVerify.Text = (verifyFullText == verifyShortText || MeasurePillBtnWidth(verifyFullText, 8.5F, 16, true, 15) <= rightW)
+                        ? verifyFullText
+                        : verifyShortText;
+                }
+
+                cardActiveDebt.Resize += (s, e) => LayoutActiveDebtCard();
+                LayoutActiveDebtCard();
 
                 btnUploadProof.Click += async (s, e) =>
                 {
@@ -263,34 +678,39 @@ namespace PocketLog.Client
             }
             else
             {
-                // Thẻ trạng thái rỗng gọn gàng thay vì khung trắng khổng lồ 220px
                 Guna2Panel compactEmpty = new Guna2Panel
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 94),
+                    Size = new Size(w, 96),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    BorderRadius = 18,
+                    BorderRadius = 20,
                     FillColor = clrCardBg,
                     BorderColor = clrBorderLight,
                     BorderThickness = 1,
                     UseTransparentBackground = true
                 };
-                compactEmpty.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 16, 24, 44, 14, clrSoftGreenBg, clrPrimaryGreen));
-                var lEmpty1 = MakeLabel("Chưa có khoản chia tiền nào được gắn tag", 72, 16, 9.6F, FontStyle.Bold, clrTextMain, w - 88);
+                AttachEdgeResizeRedirector(compactEmpty);
+                compactEmpty.Controls.Add(AttachSoftBadgeDisposal(MakeSoftIconBadge(UiIcon.Receipt, 16, 25, 44, 14, clrSoftGreenBg, accentText)));
+                var lEmpty1 = MakeLabel("Chưa có khoản chia tiền nào được gắn tag", 72, 16, 8.4F, FontStyle.Bold, clrTextMain, w - 88);
                 lEmpty1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                var lEmpty2 = MakeLabel("Gắn tag bạn bè lúc đăng ảnh chi tiêu để tự động chia hóa đơn", 72, 44, 8.4F, FontStyle.Regular, clrTextMuted, w - 88, lines: 2);
+                var lEmpty2 = MakeLabel("Gắn tag bạn bè lúc đăng ảnh chi tiêu để tự động chia hóa đơn", 72, lEmpty1.Bottom + 4, 8.2F, FontStyle.Regular, clrTextMuted, w - 88, lines: 2);
                 lEmpty2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                compactEmpty.Height = Math.Max(96, lEmpty2.Bottom + 14);
                 compactEmpty.Controls.Add(lEmpty1);
                 compactEmpty.Controls.Add(lEmpty2);
                 col.Controls.Add(compactEmpty);
-                y += 106;
+                y += compactEmpty.Height + 12;
             }
 
             var btnToggleUnpaid = MakeBtn(
                 $"Các khoản chi gắn tag chưa tất toán ({unpaidList.Count})",
-                0, y, w, 46, 16, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.8F);
+                0, y, w, 46, 16, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.2F);
             btnToggleUnpaid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            AttachBtnIcon(btnToggleUnpaid, isUnpaidDropdownOpen ? UiIcon.ChevronUp : UiIcon.ChevronDown, clrPrimaryGreen, 16);
+            btnToggleUnpaid.HoverState.FillColor = clrCardBg;
+            btnToggleUnpaid.HoverState.BorderColor = clrPrimaryGreen;
+            AttachBtnIcon(btnToggleUnpaid, isUnpaidDropdownOpen ? UiIcon.ChevronUp : UiIcon.ChevronDown, accentText, 15);
+            AttachControlImageDisposal(btnToggleUnpaid, () => btnToggleUnpaid.Image, img => btnToggleUnpaid.Image = img);
+            AttachEdgeResizeRedirector(btnToggleUnpaid);
 
             btnToggleUnpaid.Click += (s, e) =>
             {
@@ -304,29 +724,34 @@ namespace PocketLog.Client
             {
                 if (unpaidList.Count == 0)
                 {
+                    Color paidBg = isDarkMode ? Color.FromArgb(16, 62, 46) : clrSoftGreenBg;
+                    Color paidBorder = isDarkMode ? Color.FromArgb(32, 110, 82) : clrSoftGreenBorder;
                     Guna2Panel emptyBox = new Guna2Panel
                     {
                         Location = new Point(0, y),
-                        Size = new Size(w, 54),
+                        Size = new Size(w, 58),
                         Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                        BorderRadius = 14,
+                        BorderRadius = 16,
                         FillColor = clrCardBg,
-                        BorderColor = clrSoftGreenBorder,
+                        BorderColor = paidBorder,
                         BorderThickness = 1,
                         UseTransparentBackground = true
                     };
-                    emptyBox.Controls.Add(MakeSoftIconBadge(UiIcon.Check, 14, 12, 30, 10, clrSoftGreenBg, clrPrimaryGreen));
-                    var lblAllPaid = MakeLabel("Tất cả các khoản chia tiền đều đã tất toán xong!", 54, 15, 9F, FontStyle.Bold, clrPrimaryGreen, w - 70);
+                    AttachEdgeResizeRedirector(emptyBox);
+                    emptyBox.Controls.Add(AttachSoftBadgeDisposal(MakeSoftIconBadge(UiIcon.Check, 14, 14, 30, 10, paidBg, positiveColor)));
+                    var lblAllPaid = MakeLabel("Tất cả các khoản chia tiền đều đã tất toán xong!", 54, 10, 8.4F, FontStyle.Bold, positiveColor, w - 70, lines: 2);
+                    lblAllPaid.TextAlign = ContentAlignment.MiddleLeft;
+                    lblAllPaid.Height = emptyBox.Height - 20;
                     lblAllPaid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
                     emptyBox.Controls.Add(lblAllPaid);
                     col.Controls.Add(emptyBox);
-                    y += 62;
+                    y += 66;
                 }
                 else
                 {
-                    int selBtnW = Math.Max(126, Math.Max(
-                        MeasurePillBtnWidth("Đang chọn", 8.6F, 19),
-                        MeasurePillBtnWidth("Kiểm tra", 8.6F, 19)));
+                    int selBtnW = Math.Max(118, Math.Max(
+                        MeasurePillBtnWidth("Đang chọn", 8.4F, 18),
+                        MeasurePillBtnWidth("Kiểm tra", 8.4F, 18)));
 
                     foreach (var debt in unpaidList)
                     {
@@ -345,11 +770,12 @@ namespace PocketLog.Client
                             BorderThickness = 1,
                             UseTransparentBackground = true
                         };
+                        AttachEdgeResizeRedirector(itemRow);
 
-                        int textMaxW = Math.Max(100, w - selBtnW - 38);
+                        int textMaxW = Math.Max(96, w - selBtnW - 36);
                         var r1 = MakeLabel($"{GetCategoryShortClean(debt.Category)}  •  {debt.Title}", 16, 10, 9.2F, FontStyle.Bold, clrTextMain, textMaxW);
                         r1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                        var r2 = MakeLabel($"{roleTag}  •  {debt.MyShare:N0}đ", 16, 37, 8.8F, FontStyle.Bold, rowIsDebtor ? clrRedDanger : clrPrimaryGreen, textMaxW);
+                        var r2 = MakeLabel($"{roleTag}  •  {debt.MyShare:N0}đ", 16, 37, 8.8F, FontStyle.Bold, rowIsDebtor ? clrRedDanger : positiveColor, textMaxW);
                         r2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
                         var r3 = MakeLabel($"{debt.Time}  •  {(debt.IsSentProof ? "Đã gửi bill" : "Chưa gửi bill")}", 16, 64, 8.2F, FontStyle.Regular, clrTextMuted, textMaxW);
                         r3.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -357,9 +783,11 @@ namespace PocketLog.Client
                         var btnSelectDebt = MakeBtn(
                             isSelected ? "Đang chọn" : (rowIsDebtor ? "Trả ngay" : "Kiểm tra"),
                             w - selBtnW - 14, 27, selBtnW, 40, 20,
-                            isSelected ? clrPrimaryGreen : clrAppBg,
-                            isSelected ? Color.White : clrIndigo,
-                            isSelected ? clrPrimaryGreen : clrBorderLight, 1, 8.6F);
+                            isSelected ? clrPrimaryGreen : clrInputBg,
+                            isSelected ? Color.White : (isDarkMode ? clrTextMain : clrIndigo),
+                            isSelected ? clrPrimaryGreen : clrBorderLight, 1, 8.4F);
+                        btnSelectDebt.HoverState.FillColor = isSelected ? clrPrimaryGreen : clrSoftGreenBg;
+                        btnSelectDebt.HoverState.BorderColor = clrPrimaryGreen;
                         btnSelectDebt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
                         btnSelectDebt.Click += (s, e) =>
@@ -383,7 +811,7 @@ namespace PocketLog.Client
             col.Controls.Add(lblSecCat);
             y += 36;
 
-            int limBtnW = Math.Max(140, MeasurePillBtnWidth("Lưu hạn mức", 8.5F, 12));
+            int limBtnW = Math.Max(126, MeasurePillBtnWidth("Lưu hạn mức", 8.3F, 12));
 
             foreach (var cat in standardCategories)
             {
@@ -403,31 +831,32 @@ namespace PocketLog.Client
                     BorderThickness = 1,
                     UseTransparentBackground = true
                 };
+                AttachEdgeResizeRedirector(catCard);
 
-                var iconBadge = MakeSoftIconBadge(
-                    GetCategoryIcon(catName), 16, 16, 42, 14,
+                var iconBadge = AttachSoftBadgeDisposal(MakeSoftIconBadge(
+                    GetCategoryIcon(catName), 14, 15, 40, 13,
                     isOver ? clrSoftRedBg : clrSoftGreenBg,
-                    isOver ? clrRedDanger : clrPrimaryGreen);
+                    isOver ? clrRedDanger : accentText));
                 catCard.Controls.Add(iconBadge);
 
-                int leftColW = Math.Max(90, w - 68 - limBtnW - 26);
-                var lblCatName = MakeLabel(GetCategoryCleanName(catName), 68, 12, 10F, FontStyle.Bold, clrTextMain, leftColW);
+                int leftColW = Math.Max(90, w - 64 - limBtnW - 24);
+                var lblCatName = MakeLabel(GetCategoryCleanName(catName), 64, 12, 9.8F, FontStyle.Bold, clrTextMain, leftColW);
                 lblCatName.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-                var lblSpent = MakeLabel($"Đã tiêu: {spent:N0}đ / {limit:N0}đ", 68, 40, 8.8F, FontStyle.Bold, isOver ? clrRedDanger : clrPrimaryGreen, leftColW);
+                var lblSpent = MakeLabel($"Đã tiêu: {spent:N0}đ / {limit:N0}đ", 64, 39, 8.2F, FontStyle.Bold, isOver ? clrRedDanger : accentText, leftColW);
                 lblSpent.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
                 int pct = limit > 0 ? Math.Min(100, (int)((long)spent * 100 / limit)) : 100;
                 Guna2ProgressBar prg = new Guna2ProgressBar
                 {
-                    Location = new Point(16, 78),
-                    Size = new Size(Math.Max(80, w - limBtnW - 44), 12),
+                    Location = new Point(14, 78),
+                    Size = new Size(Math.Max(80, w - limBtnW - 40), 12),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                     BorderRadius = 6,
                     Value = pct,
                     FillColor = clrAppBg,
-                    ProgressColor = isOver ? clrRedDanger : clrPrimaryGreen,
-                    ProgressColor2 = isOver ? Color.OrangeRed : clrSoftGreenBorder,
+                    ProgressColor = isOver ? clrRedDanger : theme.AccentPrimary,
+                    ProgressColor2 = isOver ? Color.OrangeRed : theme.AccentSecondary,
                     UseTransparentBackground = true
                 };
 
@@ -435,8 +864,11 @@ namespace PocketLog.Client
                 txtLim.Anchor = AnchorStyles.Top | AnchorStyles.Right;
                 txtLim.TextAlign = HorizontalAlignment.Right;
 
-                var btnSetLim = MakeBtn("Lưu hạn mức", w - limBtnW - 14, 56, limBtnW, 36, 12, clrSoftGreenBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 8.5F);
+                var btnSetLim = MakeBtn("Lưu hạn mức", w - limBtnW - 14, 56, limBtnW, 36, 12, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.3F);
                 btnSetLim.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                btnSetLim.HoverState.FillColor = clrPrimaryGreen;
+                btnSetLim.HoverState.ForeColor = Color.White;
+                btnSetLim.HoverState.BorderColor = clrPrimaryGreen;
                 btnSetLim.Click += async (s, e) =>
                 {
                     if (int.TryParse(txtLim.Text.Replace(".", "").Replace(",", "").Trim(), out int nLim) && nLim > 0)
@@ -458,11 +890,12 @@ namespace PocketLog.Client
             }
 
             int grandTotal = CalculateTotalPersonalSpent();
+            bool isTotalOver = grandTotal > totalBudgetLimit;
 
             Guna2Panel cardTotal = new Guna2Panel
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 160),
+                Size = new Size(w, 162),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 22,
                 FillColor = clrSoftGreenBg,
@@ -470,12 +903,13 @@ namespace PocketLog.Client
                 BorderThickness = 1,
                 UseTransparentBackground = true
             };
+            AttachEdgeResizeRedirector(cardTotal);
 
-            var lblTotalHeader = MakeLabel("TỔNG CHI TIÊU CÁ NHÂN TRONG THÁNG", 18, 12, 9.2F, FontStyle.Bold, clrPrimaryGreen, w - 36);
+            var lblTotalHeader = MakeLabel("TỔNG CHI TIÊU CÁ NHÂN TRONG THÁNG", 18, 12, 9.2F, FontStyle.Bold, accentText, w - 36);
             lblTotalHeader.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             cardTotal.Controls.Add(lblTotalHeader);
 
-            var lblGrand = MakeLabel($"{grandTotal:N0}đ   /   Hạn mức: {totalBudgetLimit:N0}đ", 18, 38, 11F, FontStyle.Bold, grandTotal > totalBudgetLimit ? clrRedDanger : clrTextMain, w - 36);
+            var lblGrand = MakeLabel($"{grandTotal:N0}đ   /   Hạn mức: {totalBudgetLimit:N0}đ", 18, 38, 11F, FontStyle.Bold, isTotalOver ? clrRedDanger : clrTextMain, w - 36);
             lblGrand.Font = FontBold(11F);
             lblGrand.Height = TextRenderer.MeasureText("Ág", lblGrand.Font).Height + 4;
             lblGrand.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -489,13 +923,13 @@ namespace PocketLog.Client
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 7,
                 Value = totalPct,
-                FillColor = Color.White,
-                ProgressColor = grandTotal > totalBudgetLimit ? clrRedDanger : clrPrimaryGreen,
-                ProgressColor2 = grandTotal > totalBudgetLimit ? Color.OrangeRed : clrPrimaryGreen,
+                FillColor = theme.CardBg,
+                ProgressColor = isTotalOver ? clrRedDanger : theme.AccentPrimary,
+                ProgressColor2 = isTotalOver ? Color.OrangeRed : theme.AccentSecondary,
                 UseTransparentBackground = true
             };
 
-            int saveTotalBtnW = Math.Max(180, MeasurePillBtnWidth("Lưu tổng hạn mức", 9F, 14) + 6);
+            int saveTotalBtnW = Math.Max(158, MeasurePillBtnWidth("Lưu tổng hạn mức", 8.5F, 14));
             var totalActionGrid = new BufferedTableLayout
             {
                 Location = new Point(16, 98),
@@ -510,13 +944,31 @@ namespace PocketLog.Client
 
             var txtTotalIn = MakeTextBox(totalBudgetLimit.ToString("N0"), "Tổng hạn mức", 0, 0, 140, 42, clrSoftGreenBg, true);
             txtTotalIn.Dock = DockStyle.Fill;
-            txtTotalIn.FillColor = Color.White;
+            txtTotalIn.FillColor = theme.InputBg;
+            txtTotalIn.FocusedState.FillColor = theme.CardBg;
             txtTotalIn.BorderColor = clrSoftGreenBorder;
             txtTotalIn.Margin = new Padding(2, 1, 6, 1);
 
-            var btnSetTotal = MakeBtn("Lưu tổng hạn mức", 0, 0, saveTotalBtnW - 4, 42, 14, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 9F);
-            btnSetTotal.Dock = DockStyle.Fill;
-            btnSetTotal.Margin = new Padding(2, 1, 2, 1);
+            var btnSetTotal = new Guna2GradientButton
+            {
+                Text = "Lưu tổng hạn mức",
+                Dock = DockStyle.Fill,
+                Margin = new Padding(2, 1, 2, 1),
+                BorderRadius = 14,
+                FillColor = theme.AccentPrimary,
+                FillColor2 = theme.AccentSecondary,
+                GradientMode = LinearGradientMode.ForwardDiagonal,
+                ForeColor = Color.White,
+                Font = FontMedium(8.5F),
+                BackColor = Color.Transparent,
+                UseTransparentBackground = true,
+                AutoRoundedCorners = false,
+                Cursor = Cursors.Hand
+            };
+            btnSetTotal.DisabledState.FillColor = clrInputBg;
+            btnSetTotal.DisabledState.FillColor2 = clrInputBg;
+            btnSetTotal.DisabledState.ForeColor = clrTextMuted;
+            AttachEdgeResizeRedirector(btnSetTotal);
             btnSetTotal.Click += async (s, e) =>
             {
                 if (int.TryParse(txtTotalIn.Text.Replace(".", "").Replace(",", "").Trim(), out int nTot) && nTot > 0)
@@ -537,11 +989,15 @@ namespace PocketLog.Client
             cardTotal.Controls.Add(prgTotal);
             cardTotal.Controls.Add(totalActionGrid);
             col.Controls.Add(cardTotal);
-            y += 174;
+            y += 176;
 
-            var btnExportCsv = MakeBtn("Xuất báo cáo chi tiêu (.CSV / Excel)", 0, y, w, 48, 16, clrCardBg, clrPrimaryGreen, clrSoftGreenBorder, 1, 9.2F);
+            var btnExportCsv = MakeBtn("Xuất báo cáo chi tiêu (.CSV / Excel)", 0, y, w, 48, 16, clrCardBg, softTextInk, clrSoftGreenBorder, 1, 8.8F);
             btnExportCsv.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            AttachBtnIcon(btnExportCsv, UiIcon.Receipt, clrPrimaryGreen, 17);
+            btnExportCsv.HoverState.FillColor = clrSoftGreenBg;
+            btnExportCsv.HoverState.BorderColor = clrPrimaryGreen;
+            AttachBtnIcon(btnExportCsv, UiIcon.Receipt, accentText, 17);
+            AttachControlImageDisposal(btnExportCsv, () => btnExportCsv.Image, img => btnExportCsv.Image = img);
+            AttachEdgeResizeRedirector(btnExportCsv);
 
             var lblExportStatus = MakeLabel("", 4, y + 54, 8.2F, FontStyle.Regular, clrTextMuted, w - 8);
             lblExportStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -607,7 +1063,7 @@ namespace PocketLog.Client
 
                     File.WriteAllText(sfd.FileName, sb.ToString(), new System.Text.UTF8Encoding(true));
                     lblExportStatus.Text = $"✓ Đã xuất file: {Path.GetFileName(sfd.FileName)}";
-                    lblExportStatus.ForeColor = clrPrimaryGreen;
+                    lblExportStatus.ForeColor = positiveColor;
                 }
                 catch (Exception ex)
                 {
@@ -621,6 +1077,7 @@ namespace PocketLog.Client
             y += 80;
 
             col.Height = y;
+            AttachExpenseScrollWidthGuard(page, col);
             return page;
         }
 

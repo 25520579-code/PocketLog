@@ -189,7 +189,7 @@ namespace PocketLog.Client
                     Amount = p.Amount,
                     Time = p.Time,
                     Emoji = GetCategoryEmoji(p.Category),
-                    PhotoBg = mine ? Color.FromArgb(82, 122, 106) : Color.FromArgb(148, 128, 114),
+                    PhotoBg = GetHarmonizedPostPhotoBg(p, mine),
                     CustomImage = Base64ToImage(p.ImageBase64)
                 });
             }
@@ -218,9 +218,47 @@ namespace PocketLog.Client
             }
 
             RefreshDataDrivenPanesOnSync();
+            UpdateBottomTabIcons();
 
             if (pnlDrawerBackdrop.Visible)
                 RenderFriendsDrawerContent(currentFriendsSearchKeyword);
+        }
+
+        private static readonly Color[] FriendSocialPhotoPalette =
+        {
+            Color.FromArgb(244, 63, 94),
+            Color.FromArgb(245, 158, 11),
+            Color.FromArgb(139, 92, 246),
+            Color.FromArgb(14, 165, 233),
+            Color.FromArgb(16, 185, 129),
+            Color.FromArgb(99, 102, 241)
+        };
+
+        private static Color GetHarmonizedPostPhotoBg(PostDto post, bool isMine)
+        {
+            string cat = post?.Category ?? "";
+            if (isMine)
+            {
+                if (cat.Contains("Đồ ăn") || cat.Contains("Ăn uống")) return Color.FromArgb(13, 148, 136);
+                if (cat.Contains("Xăng")) return Color.FromArgb(2, 132, 199);
+                if (cat.Contains("Quần áo")) return Color.FromArgb(124, 58, 237);
+                if (cat.Contains("Tiền trọ")) return Color.FromArgb(79, 70, 229);
+                if (cat.Contains("Mua sắm")) return Color.FromArgb(219, 39, 119);
+                if (cat.Contains("Học tập")) return Color.FromArgb(14, 165, 233);
+                return ((post?.PostId ?? 0) % 2 == 0)
+                    ? Color.FromArgb(79, 70, 229)
+                    : Color.FromArgb(13, 148, 136);
+            }
+
+            if (cat.Contains("Đồ ăn") || cat.Contains("Ăn uống")) return Color.FromArgb(244, 63, 94);
+            if (cat.Contains("Xăng")) return Color.FromArgb(245, 158, 11);
+            if (cat.Contains("Quần áo")) return Color.FromArgb(168, 85, 247);
+            if (cat.Contains("Tiền trọ")) return Color.FromArgb(99, 102, 241);
+            if (cat.Contains("Mua sắm")) return Color.FromArgb(236, 72, 153);
+            if (cat.Contains("Học tập")) return Color.FromArgb(14, 165, 233);
+
+            int idx = Math.Abs((post?.AuthorId ?? 0) + (post?.PostId ?? 0));
+            return FriendSocialPhotoPalette[idx % FriendSocialPhotoPalette.Length];
         }
 
         private void CloseCurrentSocket()
