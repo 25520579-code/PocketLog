@@ -390,7 +390,7 @@ namespace PocketLog.Client
             {
                 return (cfgHost, string.IsNullOrEmpty(cfgPort) ? "8888" : cfgPort);
             }
-            return ("", "");
+            return ("20.239.65.18", "8888");
         }
 
         private static void SaveServerEndpoint(string host, int port)
