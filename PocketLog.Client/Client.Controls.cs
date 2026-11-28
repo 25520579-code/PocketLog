@@ -327,6 +327,15 @@ namespace PocketLog.Client
                     parentScroll.HandleTrackMouseUp();
                 }
 
+                protected override void OnMouseCaptureChanged(EventArgs e)
+                {
+                    base.OnMouseCaptureChanged(e);
+                    if (!Capture)
+                    {
+                        parentScroll.HandleTrackMouseUp();
+                    }
+                }
+
                 protected override void OnPaint(PaintEventArgs e)
                 {
                     parentScroll.PaintOverlayThumb(e.Graphics, ClientSize);
@@ -352,6 +361,9 @@ namespace PocketLog.Client
             private long lastActivityTick;
             private bool wasScrollable;
             private bool syncingLayout;
+            private bool timersDisposed;
+
+            private bool IsTearingDown => IsDisposed || Disposing || timersDisposed;
 
             public Panel ContentHost => contentHost;
             public int ScrollOffsetY => scrollOffsetY;
@@ -427,7 +439,15 @@ namespace PocketLog.Client
 
                 Resize += (s, e) => SyncLayout();
                 Layout += (s, e) => SyncLayout();
-                HandleCreated += (s, e) => SyncLayout();
+                HandleCreated += (s, e) =>
+                {
+                    SyncLayout();
+                    if (!IsTearingDown && IsScrollable && thumbOpacity > 0f && !fadeTimer.Enabled && !isTrackHovered && !isDraggingThumb)
+                    {
+                        lastActivityTick = Environment.TickCount64;
+                        fadeTimer.Start();
+                    }
+                };
                 contentHost.SizeChanged += (s, e) =>
                 {
                     if (!syncingLayout) SyncLayout();
@@ -466,7 +486,7 @@ namespace PocketLog.Client
 
             public void SyncLayout()
             {
-                if (syncingLayout || IsDisposed || contentHost == null || contentHost.IsDisposed)
+                if (syncingLayout || IsTearingDown || contentHost == null || contentHost.IsDisposed)
                     return;
 
                 int availW = ClientSize.Width;
@@ -516,7 +536,7 @@ namespace PocketLog.Client
 
             public void SetScrollOffset(int y, bool animate = false)
             {
-                if (IsDisposed || contentHost == null || contentHost.IsDisposed) return;
+                if (IsTearingDown || contentHost == null || contentHost.IsDisposed) return;
 
                 int maxOff = MaxScrollOffset;
                 int clamped = Math.Clamp(y, 0, maxOff);
@@ -601,6 +621,9 @@ namespace PocketLog.Client
 
             private void UpdateThumbMetrics()
             {
+                if (IsTearingDown || contentHost == null || contentHost.IsDisposed)
+                    return;
+
                 int maxOff = MaxScrollOffset;
                 if (maxOff <= 0 || ClientSize.Height <= 0)
                 {
@@ -621,6 +644,11 @@ namespace PocketLog.Client
                 {
                     wasScrollable = true;
                     WakeScrollbar(0.75f);
+                }
+                else if (IsHandleCreated && thumbOpacity > 0f && !fadeTimer.Enabled && !isTrackHovered && !isDraggingThumb)
+                {
+                    lastActivityTick = Environment.TickCount64;
+                    fadeTimer.Start();
                 }
 
                 int trackH = (scrollTrack != null && !scrollTrack.IsDisposed && scrollTrack.Height > 0)
@@ -645,21 +673,24 @@ namespace PocketLog.Client
 
             private void WakeScrollbar(float opacity = 1.0f)
             {
-                if (!IsScrollable) return;
+                if (IsTearingDown || !IsScrollable) return;
                 thumbOpacity = Math.Max(thumbOpacity, Math.Clamp(opacity, 0f, 1f));
                 lastActivityTick = Environment.TickCount64;
                 if (!fadeTimer.Enabled && IsHandleCreated)
                 {
                     fadeTimer.Start();
                 }
-                scrollTrack?.Invalidate();
+                if (scrollTrack != null && !scrollTrack.IsDisposed)
+                {
+                    scrollTrack.Invalidate();
+                }
             }
 
             private void OnAnimTimerTick(object sender, EventArgs e)
             {
-                if (IsDisposed || !IsScrollable)
+                if (IsTearingDown || !IsScrollable)
                 {
-                    animTimer.Stop();
+                    if (!timersDisposed) animTimer.Stop();
                     return;
                 }
 
@@ -678,9 +709,9 @@ namespace PocketLog.Client
 
             private void OnFadeTimerTick(object sender, EventArgs e)
             {
-                if (IsDisposed || !IsScrollable)
+                if (IsTearingDown || !IsScrollable)
                 {
-                    fadeTimer.Stop();
+                    if (!timersDisposed) fadeTimer.Stop();
                     return;
                 }
 
@@ -709,7 +740,7 @@ namespace PocketLog.Client
 
             private void SetTrackHover(bool hovered)
             {
-                if (isTrackHovered == hovered) return;
+                if (IsTearingDown || isTrackHovered == hovered) return;
                 isTrackHovered = hovered;
                 if (scrollTrack != null && !scrollTrack.IsDisposed)
                 {
@@ -728,7 +759,7 @@ namespace PocketLog.Client
 
             private void HandleTrackMouseDown(int mouseY)
             {
-                if (!IsScrollable) return;
+                if (IsTearingDown || !IsScrollable) return;
                 WakeScrollbar(1.0f);
 
                 if (mouseY >= thumbBounds.Top - 2 && mouseY <= thumbBounds.Bottom + 2)
@@ -753,6 +784,7 @@ namespace PocketLog.Client
 
             private void HandleTrackMouseMove(int mouseY, MouseButtons buttons)
             {
+                if (IsTearingDown) return;
                 if (isDraggingThumb && buttons == MouseButtons.Left && IsScrollable)
                 {
                     int trackH = Math.Max(20, (scrollTrack?.Height ?? ClientSize.Height) - TrackPadY * 2);
@@ -770,7 +802,8 @@ namespace PocketLog.Client
             {
                 if (!isDraggingThumb) return;
                 isDraggingThumb = false;
-                if (scrollTrack != null && !scrollTrack.IsDisposed)
+                if (IsTearingDown) return;
+                if (scrollTrack != null && !scrollTrack.IsDisposed && scrollTrack.Capture)
                 {
                     scrollTrack.Capture = false;
                 }
@@ -806,8 +839,9 @@ namespace PocketLog.Client
 
             protected override void Dispose(bool disposing)
             {
-                if (disposing)
+                if (disposing && !timersDisposed)
                 {
+                    timersDisposed = true;
                     try { animTimer.Stop(); animTimer.Dispose(); } catch { }
                     try { fadeTimer.Stop(); fadeTimer.Dispose(); } catch { }
                 }
