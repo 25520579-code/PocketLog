@@ -21,6 +21,800 @@ namespace PocketLog.Client
             return Color.FromArgb(alpha, r, g, bl);
         }
 
+        internal static void PaintElevatedCardSurface(
+            Graphics g,
+            Rectangle bounds,
+            int cornerRadius,
+            Color fillColor,
+            Color borderColor,
+            int borderThickness,
+            int elevationLevel,
+            bool isDarkMode)
+        {
+            if (g == null || bounds.Width < 4 || bounds.Height < 4) return;
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            float radius = Math.Max(2f, Math.Min(cornerRadius, Math.Min(bounds.Width, bounds.Height) / 2f));
+
+            if (elevationLevel > 0)
+            {
+                int lvl = Math.Clamp(elevationLevel, 1, 3);
+                float scale = lvl == 1 ? 0.65f : (lvl == 2 ? 1.0f : 1.35f);
+                Color shadowBase = isDarkMode ? Color.Black : Color.FromArgb(15, 23, 42);
+
+                int a3 = Math.Clamp((int)Math.Round((isDarkMode ? 24 : 8) * scale), 1, 95);
+                int a2 = Math.Clamp((int)Math.Round((isDarkMode ? 44 : 14) * scale), 1, 130);
+                int a1 = Math.Clamp((int)Math.Round((isDarkMode ? 70 : 22) * scale), 1, 165);
+
+                using (GraphicsPath p3 = CreateRoundedPath(bounds.X - 2.5f, bounds.Y + 5f, bounds.Width + 5f, bounds.Height, radius + 2f))
+                using (var b3 = new SolidBrush(Color.FromArgb(a3, shadowBase)))
+                {
+                    g.FillPath(b3, p3);
+                }
+
+                using (GraphicsPath p2 = CreateRoundedPath(bounds.X - 1.5f, bounds.Y + 3f, bounds.Width + 3f, bounds.Height, radius + 1f))
+                using (var b2 = new SolidBrush(Color.FromArgb(a2, shadowBase)))
+                {
+                    g.FillPath(b2, p2);
+                }
+
+                using (GraphicsPath p1 = CreateRoundedPath(bounds.X - 0.5f, bounds.Y + 1f, bounds.Width + 1f, bounds.Height, radius + 0.5f))
+                using (var b1 = new SolidBrush(Color.FromArgb(a1, shadowBase)))
+                {
+                    g.FillPath(b1, p1);
+                }
+            }
+
+            var cardRect = new RectangleF(
+                bounds.X + 0.5f,
+                bounds.Y + 0.5f,
+                Math.Max(2f, bounds.Width - 1f),
+                Math.Max(2f, bounds.Height - 1f));
+
+            using GraphicsPath cardPath = CreateRoundedPath(cardRect.X, cardRect.Y, cardRect.Width, cardRect.Height, radius);
+            if (fillColor.A > 0)
+            {
+                using var fillBrush = new SolidBrush(fillColor);
+                g.FillPath(fillBrush, cardPath);
+            }
+
+            if (isDarkMode && bounds.Width >= 10 && bounds.Height >= 10)
+            {
+                float inset = Math.Max(1.0f, borderThickness);
+                float rimW = Math.Max(2f, bounds.Width - inset * 2f);
+                float rimH = Math.Max(2f, bounds.Height - inset * 2f);
+                float rimRadius = Math.Max(1f, radius - inset * 0.6f);
+                float fadeH = Math.Max(6f, Math.Min(bounds.Height * 0.45f, radius + 6f));
+
+                GraphicsState saved = g.Save();
+                try
+                {
+                    g.SetClip(cardPath, CombineMode.Intersect);
+                    g.SetClip(new RectangleF(bounds.X, bounds.Y, bounds.Width, fadeH), CombineMode.Intersect);
+
+                    using GraphicsPath rimPath = CreateRoundedPath(bounds.X + inset, bounds.Y + inset, rimW, rimH, rimRadius);
+                    using var rimBrush = new LinearGradientBrush(
+                        new PointF(bounds.X, bounds.Y + inset),
+                        new PointF(bounds.X, bounds.Y + inset + fadeH),
+                        Color.FromArgb(26, 255, 255, 255),
+                        Color.FromArgb(0, 255, 255, 255));
+                    using var rimPen = new Pen(rimBrush, 1.2f);
+                    g.DrawPath(rimPen, rimPath);
+                }
+                finally
+                {
+                    g.Restore(saved);
+                }
+            }
+
+            if (borderThickness > 0 && borderColor.A > 0)
+            {
+                using var borderPen = new Pen(borderColor, borderThickness);
+                g.DrawPath(borderPen, cardPath);
+            }
+        }
+
+        public class ElevatedCardPanel : Panel
+        {
+            private readonly Client owner;
+            private int cornerRadius = 20;
+            private Color cardFillColor;
+            private Color cardBorderColor;
+            private int cardBorderThickness = 1;
+            private int elevationLevel = 2;
+
+            public int CornerRadius
+            {
+                get => cornerRadius;
+                set
+                {
+                    int safe = Math.Max(0, value);
+                    if (cornerRadius != safe)
+                    {
+                        cornerRadius = safe;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public Color CardFillColor
+            {
+                get => cardFillColor;
+                set
+                {
+                    if (cardFillColor != value)
+                    {
+                        cardFillColor = value;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public Color CardBorderColor
+            {
+                get => cardBorderColor;
+                set
+                {
+                    if (cardBorderColor != value)
+                    {
+                        cardBorderColor = value;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public int CardBorderThickness
+            {
+                get => cardBorderThickness;
+                set
+                {
+                    int safe = Math.Max(0, value);
+                    if (cardBorderThickness != safe)
+                    {
+                        cardBorderThickness = safe;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public int ElevationLevel
+            {
+                get => elevationLevel;
+                set
+                {
+                    int safe = Math.Clamp(value, 0, 3);
+                    if (elevationLevel != safe)
+                    {
+                        elevationLevel = safe;
+                        Invalidate();
+                    }
+                }
+            }
+
+            public Rectangle InnerCardBounds => new Rectangle(
+                4,
+                2,
+                Math.Max(4, ClientSize.Width - 8),
+                Math.Max(4, ClientSize.Height - 8));
+
+            public ElevatedCardPanel(Client owner = null)
+            {
+                this.owner = owner;
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint |
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.ResizeRedraw,
+                    true);
+                DoubleBuffered = true;
+                Padding = new Padding(4, 2, 4, 6);
+                BackColor = owner != null ? owner.clrAppBg : Color.White;
+                cardFillColor = owner != null ? owner.clrCardBg : Color.White;
+                cardBorderColor = owner != null ? owner.clrBorderLight : Color.FromArgb(226, 232, 244);
+                owner?.AttachEdgeResizeRedirector(this);
+            }
+
+            protected override void OnResize(EventArgs e)
+            {
+                base.OnResize(e);
+                Invalidate();
+            }
+
+            protected override void OnPaintBackground(PaintEventArgs e)
+            {
+                Color backdrop = BackColor.A == 255
+                    ? BackColor
+                    : (owner != null
+                        ? owner.clrAppBg
+                        : (Parent != null && Parent.BackColor.A == 255 ? Parent.BackColor : Color.White));
+
+                using (var bgBrush = new SolidBrush(backdrop))
+                {
+                    e.Graphics.FillRectangle(bgBrush, ClientRectangle);
+                }
+
+                bool dark = owner != null
+                    ? owner.isDarkMode
+                    : ((cardFillColor.R * 299 + cardFillColor.G * 587 + cardFillColor.B * 114) / 1000 < 90);
+
+                PaintElevatedCardSurface(
+                    e.Graphics,
+                    InnerCardBounds,
+                    cornerRadius,
+                    cardFillColor,
+                    cardBorderColor,
+                    cardBorderThickness,
+                    elevationLevel,
+                    dark);
+            }
+        }
+
+        public class AndroidOverlayScrollPanel : SmoothScrollPanel
+        {
+            private const int TrackWidth = 10;
+            private const int TrackPadY = 6;
+            private const int MinThumbHeight = 32;
+            private const int IdleFadeDelayMs = 1200;
+
+            private sealed class OverlayScrollTrack : Control
+            {
+                private readonly Client owner;
+                private readonly AndroidOverlayScrollPanel parentScroll;
+
+                public OverlayScrollTrack(Client owner, AndroidOverlayScrollPanel parentScroll)
+                {
+                    this.owner = owner;
+                    this.parentScroll = parentScroll;
+                    SetStyle(
+                        ControlStyles.AllPaintingInWmPaint |
+                        ControlStyles.UserPaint |
+                        ControlStyles.OptimizedDoubleBuffer |
+                        ControlStyles.ResizeRedraw,
+                        true);
+                    DoubleBuffered = true;
+                    Dock = DockStyle.Right;
+                    Width = TrackWidth;
+                    TabStop = false;
+                    BackColor = parentScroll.ResolveOpaqueTrackColor();
+                    owner?.AttachEdgeResizeRedirector(this);
+                }
+
+                private bool IsWindowResizeEdge(Point localPt)
+                {
+                    if (owner == null || owner.IsDisposed || owner.WindowState != FormWindowState.Normal)
+                        return false;
+                    return owner.GetResizeHitTest(PointToScreen(localPt)) != 0;
+                }
+
+                protected override void OnMouseEnter(EventArgs e)
+                {
+                    base.OnMouseEnter(e);
+                    if (IsWindowResizeEdge(PointToClient(Cursor.Position))) return;
+                    parentScroll.SetTrackHover(true);
+                }
+
+                protected override void OnMouseLeave(EventArgs e)
+                {
+                    base.OnMouseLeave(e);
+                    parentScroll.SetTrackHover(false);
+                }
+
+                protected override void OnMouseDown(MouseEventArgs e)
+                {
+                    base.OnMouseDown(e);
+                    if (e.Button != MouseButtons.Left) return;
+                    if (IsWindowResizeEdge(e.Location)) return;
+                    parentScroll.HandleTrackMouseDown(e.Y);
+                }
+
+                protected override void OnMouseMove(MouseEventArgs e)
+                {
+                    base.OnMouseMove(e);
+                    if (!parentScroll.isDraggingThumb && IsWindowResizeEdge(e.Location))
+                    {
+                        Cursor = Cursors.Default;
+                        parentScroll.SetTrackHover(false);
+                        return;
+                    }
+                    parentScroll.HandleTrackMouseMove(e.Y, e.Button);
+                }
+
+                protected override void OnMouseUp(MouseEventArgs e)
+                {
+                    base.OnMouseUp(e);
+                    parentScroll.HandleTrackMouseUp();
+                }
+
+                protected override void OnPaint(PaintEventArgs e)
+                {
+                    parentScroll.PaintOverlayThumb(e.Graphics, ClientSize);
+                }
+            }
+
+            private readonly Client owner;
+            private readonly Panel contentHost;
+            private readonly OverlayScrollTrack scrollTrack;
+            private readonly System.Windows.Forms.Timer animTimer;
+            private readonly System.Windows.Forms.Timer fadeTimer;
+
+            private int scrollOffsetY;
+            private int targetOffsetY;
+            private Rectangle thumbBounds = Rectangle.Empty;
+            private float thumbOpacity;
+            private bool centerColumnMode;
+            private int maxContentWidth = MaxColWidth;
+            private bool isTrackHovered;
+            private bool isDraggingThumb;
+            private int dragStartMouseY;
+            private int dragStartScrollY;
+            private long lastActivityTick;
+            private bool wasScrollable;
+            private bool syncingLayout;
+
+            public Panel ContentHost => contentHost;
+            public int ScrollOffsetY => scrollOffsetY;
+
+            public int MaxScrollOffset
+            {
+                get
+                {
+                    int vh = ClientSize.Height;
+                    if (vh <= 0 || contentHost == null || contentHost.IsDisposed) return 0;
+                    return Math.Max(0, contentHost.Height - vh);
+                }
+            }
+
+            public bool IsScrollable => MaxScrollOffset > 0;
+            public Rectangle ThumbBounds => thumbBounds;
+            public float ThumbOpacity => thumbOpacity;
+
+            public bool CenterColumnMode
+            {
+                get => centerColumnMode;
+                set
+                {
+                    if (centerColumnMode != value)
+                    {
+                        centerColumnMode = value;
+                        SyncLayout();
+                    }
+                }
+            }
+
+            public int MaxContentWidth
+            {
+                get => maxContentWidth;
+                set
+                {
+                    int safe = Math.Max(260, value);
+                    if (maxContentWidth != safe)
+                    {
+                        maxContentWidth = safe;
+                        SyncLayout();
+                    }
+                }
+            }
+
+            public AndroidOverlayScrollPanel(Client owner = null)
+            {
+                this.owner = owner;
+                base.AutoScroll = false;
+                BackColor = owner != null ? owner.clrAppBg : Color.White;
+
+                contentHost = new Panel
+                {
+                    Location = new Point(14, 0),
+                    Size = new Size(DefaultColWidth, 100),
+                    BackColor = Color.Transparent
+                };
+
+                scrollTrack = new OverlayScrollTrack(owner, this);
+
+                Controls.Add(contentHost);
+                Controls.Add(scrollTrack);
+                scrollTrack.BringToFront();
+
+                animTimer = new System.Windows.Forms.Timer { Interval = 16 };
+                animTimer.Tick += OnAnimTimerTick;
+
+                fadeTimer = new System.Windows.Forms.Timer { Interval = 40 };
+                fadeTimer.Tick += OnFadeTimerTick;
+
+                owner?.AttachEdgeResizeRedirector(this);
+                owner?.AttachEdgeResizeRedirector(contentHost);
+
+                Resize += (s, e) => SyncLayout();
+                Layout += (s, e) => SyncLayout();
+                HandleCreated += (s, e) => SyncLayout();
+                contentHost.SizeChanged += (s, e) =>
+                {
+                    if (!syncingLayout) SyncLayout();
+                };
+            }
+
+            private Color ResolveOpaqueTrackColor()
+            {
+                if (BackColor.A == 255) return BackColor;
+                if (owner != null) return owner.clrAppBg;
+                if (Parent != null && Parent.BackColor.A == 255) return Parent.BackColor;
+                return Color.White;
+            }
+
+            private void SyncTrackBackColor()
+            {
+                if (scrollTrack == null || scrollTrack.IsDisposed) return;
+                Color target = ResolveOpaqueTrackColor();
+                if (scrollTrack.BackColor.ToArgb() != target.ToArgb())
+                {
+                    scrollTrack.BackColor = target;
+                }
+                scrollTrack.Invalidate();
+            }
+
+            protected override void OnBackColorChanged(EventArgs e)
+            {
+                base.OnBackColorChanged(e);
+                SyncTrackBackColor();
+            }
+
+            public void SyncTheme()
+            {
+                SyncTrackBackColor();
+            }
+
+            public void SyncLayout()
+            {
+                if (syncingLayout || IsDisposed || contentHost == null || contentHost.IsDisposed)
+                    return;
+
+                int availW = ClientSize.Width;
+                if (availW <= 0) return;
+
+                syncingLayout = true;
+                try
+                {
+                    int targetW;
+                    int targetX;
+                    if (centerColumnMode)
+                    {
+                        int usableW = Math.Max(260, availW - TrackWidth);
+                        int sidePad = usableW < 450 ? 10 : 14;
+                        int maxW = Math.Max(260, maxContentWidth);
+                        targetW = Math.Clamp(usableW - sidePad * 2, 260, maxW);
+                        targetX = Math.Max(sidePad, (usableW - targetW) / 2);
+                    }
+                    else
+                    {
+                        targetW = Math.Max(100, availW - 12);
+                        targetX = 0;
+                    }
+
+                    if (contentHost.Width != targetW)
+                    {
+                        contentHost.Width = targetW;
+                    }
+
+                    int maxOff = MaxScrollOffset;
+                    scrollOffsetY = Math.Clamp(scrollOffsetY, 0, maxOff);
+                    targetOffsetY = Math.Clamp(targetOffsetY, 0, maxOff);
+
+                    int targetY = -scrollOffsetY;
+                    if (contentHost.Left != targetX || contentHost.Top != targetY)
+                    {
+                        contentHost.Location = new Point(targetX, targetY);
+                    }
+
+                    UpdateThumbMetrics();
+                }
+                finally
+                {
+                    syncingLayout = false;
+                }
+            }
+
+            public void SetScrollOffset(int y, bool animate = false)
+            {
+                if (IsDisposed || contentHost == null || contentHost.IsDisposed) return;
+
+                int maxOff = MaxScrollOffset;
+                int clamped = Math.Clamp(y, 0, maxOff);
+
+                if (maxOff > 0)
+                {
+                    WakeScrollbar(1.0f);
+                }
+
+                if (!animate || !IsHandleCreated || Math.Abs(clamped - scrollOffsetY) <= 1)
+                {
+                    animTimer.Stop();
+                    targetOffsetY = clamped;
+                    ApplyScrollOffsetImmediate(clamped);
+                    return;
+                }
+
+                targetOffsetY = clamped;
+                int delta = targetOffsetY - scrollOffsetY;
+                int step = (int)Math.Round(delta * 0.35f);
+                if (step == 0) step = Math.Sign(delta);
+                ApplyScrollOffsetImmediate(Math.Clamp(scrollOffsetY + step, 0, maxOff));
+                if (scrollOffsetY != targetOffsetY)
+                {
+                    animTimer.Start();
+                }
+            }
+
+            public void ScrollByDelta(int deltaY, bool animate = true)
+            {
+                if (deltaY == 0 || !IsScrollable) return;
+                int baseY = animate ? targetOffsetY : scrollOffsetY;
+                SetScrollOffset(baseY + deltaY, animate);
+            }
+
+            public void ScrollControlToVisible(Control target)
+            {
+                if (target == null || target.IsDisposed || contentHost == null || contentHost.IsDisposed || !IsScrollable)
+                    return;
+
+                int relY = 0;
+                Control cur = target;
+                bool insideHost = false;
+                while (cur != null)
+                {
+                    if (ReferenceEquals(cur, contentHost))
+                    {
+                        insideHost = true;
+                        break;
+                    }
+                    relY += cur.Top;
+                    cur = cur.Parent;
+                }
+                if (!insideHost) return;
+
+                int viewH = ClientSize.Height;
+                if (viewH <= 0) return;
+
+                const int pad = 12;
+                int itemTop = relY;
+                int itemBottom = relY + target.Height;
+
+                if (itemTop < scrollOffsetY + pad)
+                {
+                    SetScrollOffset(itemTop - pad, animate: false);
+                }
+                else if (itemBottom > scrollOffsetY + viewH - pad)
+                {
+                    SetScrollOffset(itemBottom - viewH + pad, animate: false);
+                }
+            }
+
+            private void ApplyScrollOffsetImmediate(int newOffset)
+            {
+                scrollOffsetY = Math.Clamp(newOffset, 0, MaxScrollOffset);
+                if (contentHost != null && !contentHost.IsDisposed && contentHost.Top != -scrollOffsetY)
+                {
+                    contentHost.Top = -scrollOffsetY;
+                }
+                UpdateThumbMetrics();
+            }
+
+            private void UpdateThumbMetrics()
+            {
+                int maxOff = MaxScrollOffset;
+                if (maxOff <= 0 || ClientSize.Height <= 0)
+                {
+                    thumbBounds = Rectangle.Empty;
+                    wasScrollable = false;
+                    thumbOpacity = 0f;
+                    animTimer.Stop();
+                    fadeTimer.Stop();
+                    if (scrollTrack != null && !scrollTrack.IsDisposed)
+                    {
+                        scrollTrack.Cursor = Cursors.Default;
+                        scrollTrack.Invalidate();
+                    }
+                    return;
+                }
+
+                if (!wasScrollable)
+                {
+                    wasScrollable = true;
+                    WakeScrollbar(0.75f);
+                }
+
+                int trackH = (scrollTrack != null && !scrollTrack.IsDisposed && scrollTrack.Height > 0)
+                    ? scrollTrack.Height
+                    : ClientSize.Height;
+                int usableTrackH = Math.Max(20, trackH - TrackPadY * 2);
+                float viewRatio = (float)ClientSize.Height / Math.Max(1, contentHost.Height);
+                int thumbH = Math.Clamp((int)Math.Round(usableTrackH * viewRatio), Math.Min(MinThumbHeight, usableTrackH), usableTrackH);
+                float progress = (float)scrollOffsetY / maxOff;
+                int thumbY = TrackPadY + (int)Math.Round((usableTrackH - thumbH) * progress);
+
+                int thumbW = (isTrackHovered || isDraggingThumb) ? 6 : 4;
+                int trackLeft = Math.Max(0, ClientSize.Width - TrackWidth);
+                int localX = (TrackWidth - thumbW) / 2;
+                thumbBounds = new Rectangle(trackLeft + localX, thumbY, thumbW, thumbH);
+
+                if (scrollTrack != null && !scrollTrack.IsDisposed)
+                {
+                    scrollTrack.Invalidate();
+                }
+            }
+
+            private void WakeScrollbar(float opacity = 1.0f)
+            {
+                if (!IsScrollable) return;
+                thumbOpacity = Math.Max(thumbOpacity, Math.Clamp(opacity, 0f, 1f));
+                lastActivityTick = Environment.TickCount64;
+                if (!fadeTimer.Enabled && IsHandleCreated)
+                {
+                    fadeTimer.Start();
+                }
+                scrollTrack?.Invalidate();
+            }
+
+            private void OnAnimTimerTick(object sender, EventArgs e)
+            {
+                if (IsDisposed || !IsScrollable)
+                {
+                    animTimer.Stop();
+                    return;
+                }
+
+                int diff = targetOffsetY - scrollOffsetY;
+                if (Math.Abs(diff) <= 1)
+                {
+                    animTimer.Stop();
+                    ApplyScrollOffsetImmediate(targetOffsetY);
+                    return;
+                }
+
+                int step = (int)Math.Round(diff * 0.32f);
+                if (step == 0) step = Math.Sign(diff);
+                ApplyScrollOffsetImmediate(scrollOffsetY + step);
+            }
+
+            private void OnFadeTimerTick(object sender, EventArgs e)
+            {
+                if (IsDisposed || !IsScrollable)
+                {
+                    fadeTimer.Stop();
+                    return;
+                }
+
+                if (isTrackHovered || isDraggingThumb || animTimer.Enabled)
+                {
+                    lastActivityTick = Environment.TickCount64;
+                    if (thumbOpacity < 1.0f)
+                    {
+                        thumbOpacity = 1.0f;
+                        scrollTrack?.Invalidate();
+                    }
+                    return;
+                }
+
+                if (Environment.TickCount64 - lastActivityTick < IdleFadeDelayMs)
+                    return;
+
+                thumbOpacity = Math.Max(0f, thumbOpacity - 0.08f);
+                if (thumbOpacity <= 0.01f)
+                {
+                    thumbOpacity = 0f;
+                    fadeTimer.Stop();
+                }
+                scrollTrack?.Invalidate();
+            }
+
+            private void SetTrackHover(bool hovered)
+            {
+                if (isTrackHovered == hovered) return;
+                isTrackHovered = hovered;
+                if (scrollTrack != null && !scrollTrack.IsDisposed)
+                {
+                    scrollTrack.Cursor = (hovered && IsScrollable) ? Cursors.Hand : Cursors.Default;
+                }
+                if (hovered && IsScrollable)
+                {
+                    WakeScrollbar(1.0f);
+                }
+                else
+                {
+                    lastActivityTick = Environment.TickCount64;
+                }
+                UpdateThumbMetrics();
+            }
+
+            private void HandleTrackMouseDown(int mouseY)
+            {
+                if (!IsScrollable) return;
+                WakeScrollbar(1.0f);
+
+                if (mouseY >= thumbBounds.Top - 2 && mouseY <= thumbBounds.Bottom + 2)
+                {
+                    isDraggingThumb = true;
+                    dragStartMouseY = mouseY;
+                    dragStartScrollY = scrollOffsetY;
+                    animTimer.Stop();
+                    if (scrollTrack != null && !scrollTrack.IsDisposed)
+                    {
+                        scrollTrack.Capture = true;
+                    }
+                    UpdateThumbMetrics();
+                    return;
+                }
+
+                int trackH = Math.Max(20, (scrollTrack?.Height ?? ClientSize.Height) - TrackPadY * 2);
+                int travel = Math.Max(1, trackH - thumbBounds.Height);
+                float ratio = Math.Clamp((mouseY - TrackPadY - thumbBounds.Height / 2f) / travel, 0f, 1f);
+                SetScrollOffset((int)Math.Round(ratio * MaxScrollOffset), animate: true);
+            }
+
+            private void HandleTrackMouseMove(int mouseY, MouseButtons buttons)
+            {
+                if (isDraggingThumb && buttons == MouseButtons.Left && IsScrollable)
+                {
+                    int trackH = Math.Max(20, (scrollTrack?.Height ?? ClientSize.Height) - TrackPadY * 2);
+                    int travel = Math.Max(1, trackH - thumbBounds.Height);
+                    int dy = mouseY - dragStartMouseY;
+                    int nextOffset = dragStartScrollY + (int)Math.Round((double)dy * MaxScrollOffset / travel);
+                    SetScrollOffset(nextOffset, animate: false);
+                    return;
+                }
+
+                SetTrackHover(true);
+            }
+
+            private void HandleTrackMouseUp()
+            {
+                if (!isDraggingThumb) return;
+                isDraggingThumb = false;
+                if (scrollTrack != null && !scrollTrack.IsDisposed)
+                {
+                    scrollTrack.Capture = false;
+                }
+                lastActivityTick = Environment.TickCount64;
+                UpdateThumbMetrics();
+            }
+
+            private void PaintOverlayThumb(Graphics g, Size trackSize)
+            {
+                if (!IsScrollable || thumbOpacity <= 0.01f || thumbBounds.Height <= 0 || trackSize.Width <= 0)
+                    return;
+
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+                int thumbW = (isTrackHovered || isDraggingThumb) ? 6 : 4;
+                float x = (trackSize.Width - thumbW) / 2f;
+                float y = thumbBounds.Y;
+                float h = thumbBounds.Height;
+
+                bool dark = owner != null && owner.isDarkMode;
+                Color baseClr = dark ? Color.FromArgb(148, 163, 184) : Color.FromArgb(100, 116, 139);
+                int maxAlpha = dark
+                    ? (isDraggingThumb ? 215 : (isTrackHovered ? 185 : 135))
+                    : (isDraggingThumb ? 200 : (isTrackHovered ? 170 : 120));
+                int alpha = Math.Clamp((int)Math.Round(maxAlpha * thumbOpacity), 0, 255);
+                if (alpha <= 0) return;
+
+                using GraphicsPath pill = CreateRoundedPath(x, y, thumbW, h, thumbW / 2f);
+                using var brush = new SolidBrush(Color.FromArgb(alpha, baseClr));
+                g.FillPath(brush, pill);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    try { animTimer.Stop(); animTimer.Dispose(); } catch { }
+                    try { fadeTimer.Stop(); fadeTimer.Dispose(); } catch { }
+                }
+                base.Dispose(disposing);
+            }
+        }
+
         public class GradientPillButton : Guna2Button
         {
             private bool isGradientActive;

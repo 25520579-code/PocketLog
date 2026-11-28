@@ -15,7 +15,7 @@ namespace PocketLog.Client
 {
     public partial class Client : Form
     {
-        protected class SmoothScrollPanel : Panel
+        public class SmoothScrollPanel : Panel
         {
             public SmoothScrollPanel()
             {
@@ -39,7 +39,8 @@ namespace PocketLog.Client
             Send, Clipboard, SwitchCam, Close, Check, Upload,
             Tag, Receipt, Food, Fuel, Shirt, Home, Cart, Book,
             ChevronDown, ChevronUp, ChevronLeft,
-            Moon, Sun, Eye, EyeOff
+            Moon, Sun, Eye, EyeOff,
+            Heart, HeartFilled, ArrowRight
         }
 
         private Guna2BorderlessForm borderlessForm;
@@ -73,6 +74,9 @@ namespace PocketLog.Client
         private int currentUserId = 0;
         private string currentUsername = "";
         private string currentFullName = "";
+        private string headerUserFullName = "";
+        private MouseWheelScrollFilter wheelScrollFilter;
+        private bool wheelFilterRegistered;
 
         // Bảng màu động theo Light / Dark theme (đồng bộ qua ApplyThemeColors)
         private Color clrAppBg = Color.FromArgb(244, 246, 251);
@@ -179,12 +183,15 @@ namespace PocketLog.Client
             InitializeDefaultBudgets();
             SetupPhoneShell();
             ShowAuthScreen();
+            RegisterMouseWheelFilter();
             this.FormClosing += (s, e) =>
             {
                 StopWebcam();
                 CloseCurrentSocket();
                 DisposeCachedImages();
             };
+            this.FormClosed += (s, e) => UnregisterMouseWheelFilter();
+            this.Disposed += (s, e) => UnregisterMouseWheelFilter();
         }
 
         private static string ResolveSemiBoldFamily()
@@ -240,6 +247,35 @@ namespace PocketLog.Client
             return UiIcon.Tag;
         }
 
+        protected Color GetCategoryAccentColor(string categoryKey)
+        {
+            if (string.IsNullOrWhiteSpace(categoryKey)) return CurrentTheme?.AccentPrimary ?? clrPrimaryGreen;
+            string k = categoryKey.Trim();
+            if (k.Contains("Đồ ăn", StringComparison.OrdinalIgnoreCase) || k.Contains("Ăn uống", StringComparison.OrdinalIgnoreCase))
+                return Color.FromArgb(249, 115, 22);   // #F97316
+            if (k.Contains("Xăng", StringComparison.OrdinalIgnoreCase))
+                return Color.FromArgb(14, 165, 233);   // #0EA5E9
+            if (k.Contains("Quần áo", StringComparison.OrdinalIgnoreCase))
+                return Color.FromArgb(139, 92, 246);   // #8B5CF6
+            if (k.Contains("Tiền trọ", StringComparison.OrdinalIgnoreCase))
+                return Color.FromArgb(16, 185, 129);   // #10B981
+            if (k.Contains("Mua sắm", StringComparison.OrdinalIgnoreCase))
+                return Color.FromArgb(236, 72, 153);   // #EC4899
+            if (k.Contains("Học tập", StringComparison.OrdinalIgnoreCase))
+                return Color.FromArgb(245, 158, 11);   // #F59E0B
+            return CurrentTheme?.AccentPrimary ?? clrPrimaryGreen;
+        }
+
+        protected static string GetShortVietnameseName(string fullName)
+        {
+            if (string.IsNullOrWhiteSpace(fullName)) return "";
+            string[] parts = fullName.Trim().Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return "";
+            if (parts.Length == 1) return parts[0];
+            if (parts.Length == 2) return parts[0] + " " + parts[1];
+            return parts[parts.Length - 2] + " " + parts[parts.Length - 1];
+        }
+
         private void InitializeDefaultBudgets()
         {
             categoryBudgets.Clear();
@@ -272,6 +308,7 @@ namespace PocketLog.Client
         {
             if (string.IsNullOrWhiteSpace(fullName))
             {
+                headerUserFullName = "";
                 lblHeaderUser.Text = "";
                 avtHeaderUser.Text = "";
                 pnlHeaderUserChip.Visible = false;
@@ -280,6 +317,7 @@ namespace PocketLog.Client
             else
             {
                 string clean = fullName.Trim();
+                headerUserFullName = clean;
                 avtHeaderUser.Text = GetAvatarInitial(clean);
                 lblHeaderUser.Text = clean;
                 pnlHeaderUserChip.Visible = true;
@@ -296,79 +334,132 @@ namespace PocketLog.Client
             return string.IsNullOrEmpty(first) ? "U" : first.ToUpperInvariant();
         }
 
-        // Bố cục trang cuộn tự căn giữa & co giãn mượt theo chiều rộng cửa sổ
-        protected Panel CreateResponsiveScrollPage(out Panel colPanel)
+        private sealed class MouseWheelScrollFilter : IMessageFilter
         {
-            var scrollRoot = new SmoothScrollPanel
+            private readonly Client owner;
+
+            public MouseWheelScrollFilter(Client owner)
             {
-                BackColor = clrAppBg,
-                AutoScroll = true,
-                Dock = DockStyle.Fill
-            };
-            scrollRoot.MouseEnter += (s, e) => { if (!scrollRoot.ContainsFocus) scrollRoot.Focus(); };
+                this.owner = owner;
+            }
 
-            var column = new Panel
+            public bool PreFilterMessage(ref Message m)
             {
-                Location = new Point(16, 0),
-                Size = new Size(DefaultColWidth, 100),
-                BackColor = Color.Transparent
-            };
-            scrollRoot.Controls.Add(column);
+                const int WM_MOUSEWHEEL = 0x020A;
+                if (m.Msg != WM_MOUSEWHEEL || owner == null || owner.IsDisposed || !owner.Visible)
+                    return false;
 
-            int lastColumnHeight = column.Height;
-            void SyncColumnBounds()
+                Control ctrl = Control.FromChildHandle(m.HWnd);
+                if (ctrl == null || !ReferenceEquals(ctrl.FindForm(), owner))
+                    return false;
+
+                long wp = m.WParam.ToInt64();
+                int wheelDelta = (short)((wp >> 16) & 0xFFFF);
+                if (wheelDelta == 0) return false;
+
+                long lp = m.LParam.ToInt64();
+                Point screenPt = new Point((short)(lp & 0xFFFF), (short)((lp >> 16) & 0xFFFF));
+                return owner.RouteMouseWheelAtPoint(screenPt, wheelDelta);
+            }
+        }
+
+        private void RegisterMouseWheelFilter()
+        {
+            if (wheelFilterRegistered) return;
+            wheelScrollFilter = new MouseWheelScrollFilter(this);
+            Application.AddMessageFilter(wheelScrollFilter);
+            wheelFilterRegistered = true;
+        }
+
+        private void UnregisterMouseWheelFilter()
+        {
+            if (!wheelFilterRegistered || wheelScrollFilter == null) return;
+            try { Application.RemoveMessageFilter(wheelScrollFilter); } catch { }
+            wheelScrollFilter = null;
+            wheelFilterRegistered = false;
+        }
+
+        private static Control FindDeepestVisibleControlAtScreenPoint(Control root, Point screenPt)
+        {
+            if (root == null || root.IsDisposed || !root.Visible) return null;
+            Rectangle rootRect = root.RectangleToScreen(root.ClientRectangle);
+            if (!rootRect.Contains(screenPt)) return null;
+
+            for (int i = 0; i < root.Controls.Count; i++)
             {
-                if (scrollRoot.IsDisposed || column.IsDisposed) return;
-                int availW = scrollRoot.ClientSize.Width;
-                int availH = scrollRoot.ClientSize.Height;
-                if (availW <= 0) return;
+                Control child = root.Controls[i];
+                if (child == null || child.IsDisposed || !child.Visible) continue;
+                Control deeper = FindDeepestVisibleControlAtScreenPoint(child, screenPt);
+                if (deeper != null) return deeper;
+            }
+            return root;
+        }
 
-                lastColumnHeight = column.Height;
-                bool expectVScroll = scrollRoot.VerticalScroll.Visible || (availH > 0 && column.Height > availH);
-                int reserveTarget = Math.Max(
-                    SystemInformation.VerticalScrollBarWidth,
-                    (int)Math.Ceiling(18.0 * scrollRoot.DeviceDpi / 96.0));
-                int actualVBar = scrollRoot.VerticalScroll.Visible ? Math.Max(0, scrollRoot.Width - availW) : 0;
-                int vBarReserve = expectVScroll ? Math.Max(0, reserveTarget - actualVBar) : 0;
-                int effectiveW = Math.Max(260, availW - vBarReserve);
-                int sidePad = effectiveW < 450 ? 10 : 16;
-                int targetW = Math.Clamp(effectiveW - sidePad * 2, 260, MaxColWidth);
-                int targetX = Math.Max(sidePad, (effectiveW - targetW) / 2);
-                int currentScrollY = scrollRoot.AutoScrollPosition.Y;
+        internal bool RouteMouseWheelAtPoint(Point screenPt, int wheelDelta)
+        {
+            if (IsDisposed || !Visible || wheelDelta == 0) return false;
+            if (!RectangleToScreen(ClientRectangle).Contains(screenPt)) return false;
 
-                if (column.Left != targetX || column.Width != targetW)
+            int deltaY = (int)Math.Round(-(wheelDelta / 120.0) * 76.0);
+            if (deltaY == 0) deltaY = -Math.Sign(wheelDelta) * 24;
+
+            if (pnlDrawerBackdrop != null && !pnlDrawerBackdrop.IsDisposed && pnlDrawerBackdrop.Visible)
+            {
+                Control drawerHit = FindDeepestVisibleControlAtScreenPoint(pnlFriendsDrawer, screenPt);
+                for (Control cur = drawerHit; cur != null; cur = cur.Parent)
                 {
-                    column.Location = new Point(targetX, currentScrollY);
-                    column.Width = targetW;
-                }
-
-                if (scrollRoot.HorizontalScroll.Visible && column.Right <= scrollRoot.ClientSize.Width && scrollRoot.IsHandleCreated)
-                {
-                    scrollRoot.BeginInvoke(new Action(() =>
+                    if (cur is AndroidOverlayScrollPanel drawerScroll)
                     {
-                        if (!scrollRoot.IsDisposed && !column.IsDisposed && scrollRoot.HorizontalScroll.Visible && column.Right <= scrollRoot.ClientSize.Width)
+                        if (drawerScroll.IsScrollable)
                         {
-                            scrollRoot.HorizontalScroll.Value = 0;
-                            scrollRoot.PerformLayout();
+                            drawerScroll.ScrollByDelta(deltaY, animate: true);
                         }
-                    }));
+                        return true;
+                    }
+                    if (cur is ScrollableControl nativeDrawerScroll && nativeDrawerScroll.AutoScroll)
+                    {
+                        return false;
+                    }
+                    if (ReferenceEquals(cur, pnlFriendsDrawer)) break;
+                }
+                return true;
+            }
+
+            Control hit = FindDeepestVisibleControlAtScreenPoint(this, screenPt);
+            if (hit == null) return false;
+
+            AndroidOverlayScrollPanel targetScroll = null;
+            for (Control cur = hit; cur != null; cur = cur.Parent)
+            {
+                if (cur is ScrollableControl nativeScroll && nativeScroll.AutoScroll && nativeScroll.VerticalScroll.Visible)
+                {
+                    return false;
+                }
+                if (cur is AndroidOverlayScrollPanel overlay)
+                {
+                    targetScroll = overlay;
+                    break;
                 }
             }
 
-            AttachEdgeResizeRedirector(scrollRoot);
+            if (targetScroll == null || !targetScroll.IsScrollable)
+                return false;
 
-            scrollRoot.Resize += (s, e) => SyncColumnBounds();
-            scrollRoot.Layout += (s, e) => SyncColumnBounds();
-            scrollRoot.HandleCreated += (s, e) => SyncColumnBounds();
-            column.SizeChanged += (s, e) =>
+            targetScroll.ScrollByDelta(deltaY, animate: true);
+            return true;
+        }
+
+        // Bố cục trang cuộn tự căn giữa & co giãn mượt theo chiều rộng cửa sổ (Android Overlay Scrollbar)
+        protected Panel CreateResponsiveScrollPage(out Panel colPanel)
+        {
+            var scrollRoot = new AndroidOverlayScrollPanel(this)
             {
-                if (!column.IsDisposed && column.Height != lastColumnHeight)
-                {
-                    SyncColumnBounds();
-                }
+                CenterColumnMode = true,
+                MaxContentWidth = MaxColWidth,
+                BackColor = clrAppBg,
+                Dock = DockStyle.Fill
             };
-
-            colPanel = column;
+            colPanel = scrollRoot.ContentHost;
             return scrollRoot;
         }
 
@@ -661,6 +752,48 @@ namespace PocketLog.Client
                         {
                             g.DrawLine(p, s * 0.18f, s * 0.18f, s * 0.82f, s * 0.82f);
                         }
+                        break;
+
+                    case UiIcon.Heart:
+                    case UiIcon.HeartFilled:
+                        using (GraphicsPath heartPath = new GraphicsPath())
+                        {
+                            heartPath.AddBezier(
+                                new PointF(s * 0.50f, s * 0.31f),
+                                new PointF(s * 0.42f, s * 0.14f),
+                                new PointF(s * 0.14f, s * 0.18f),
+                                new PointF(s * 0.15f, s * 0.43f));
+                            heartPath.AddBezier(
+                                new PointF(s * 0.15f, s * 0.43f),
+                                new PointF(s * 0.16f, s * 0.62f),
+                                new PointF(s * 0.38f, s * 0.74f),
+                                new PointF(s * 0.50f, s * 0.84f));
+                            heartPath.AddBezier(
+                                new PointF(s * 0.50f, s * 0.84f),
+                                new PointF(s * 0.62f, s * 0.74f),
+                                new PointF(s * 0.84f, s * 0.62f),
+                                new PointF(s * 0.85f, s * 0.43f));
+                            heartPath.AddBezier(
+                                new PointF(s * 0.85f, s * 0.43f),
+                                new PointF(s * 0.86f, s * 0.18f),
+                                new PointF(s * 0.58f, s * 0.14f),
+                                new PointF(s * 0.50f, s * 0.31f));
+                            heartPath.CloseFigure();
+                            if (icon == UiIcon.HeartFilled)
+                                g.FillPath(b, heartPath);
+                            else
+                                g.DrawPath(p, heartPath);
+                        }
+                        break;
+
+                    case UiIcon.ArrowRight:
+                        g.DrawLine(p, s * 0.20f, s * 0.50f, s * 0.78f, s * 0.50f);
+                        g.DrawLines(p, new[]
+                        {
+                            new PointF(s * 0.54f, s * 0.26f),
+                            new PointF(s * 0.78f, s * 0.50f),
+                            new PointF(s * 0.54f, s * 0.74f)
+                        });
                         break;
 
                     default:
@@ -1273,41 +1406,85 @@ namespace PocketLog.Client
             if (pnlHeader == null || btnWinClose == null) return;
             int w = pnlHeader.ClientSize.Width;
 
-            btnWinClose.Location = new Point(w - 40, 14);
-            btnWinMax.Location = new Point(w - 74, 14);
-            btnWinMin.Location = new Point(w - 108, 14);
+            btnWinClose.Location = new Point(w - 36, 14);
+            btnWinMax.Location = new Point(w - 70, 14);
+            btnWinMin.Location = new Point(w - 104, 14);
 
             if (btnThemeToggle != null)
             {
                 btnThemeToggle.Size = new Size(34, 34);
-                btnThemeToggle.Location = new Point(btnWinMin.Left - 40, 12);
+                btnThemeToggle.Location = new Point(btnWinMin.Left - 38, 12);
+            }
+
+            if (pnlLogoBadge != null)
+            {
+                pnlLogoBadge.Location = new Point(12, 13);
             }
 
             if (lblBrand != null)
             {
-                lblBrand.Top = Math.Max(10, (pnlHeader.Height - lblBrand.Height) / 2);
+                Size brandSz = TextRenderer.MeasureText(lblBrand.Text ?? "", lblBrand.Font);
+                int brandW = brandSz.Width + 4;
+                int brandH = Math.Max(22, brandSz.Height + 2);
+                lblBrand.AutoSize = false;
+                lblBrand.TextAlign = ContentAlignment.MiddleLeft;
+                lblBrand.Location = new Point(50, Math.Max(10, (pnlHeader.Height - brandH) / 2));
+                lblBrand.Size = new Size(brandW, brandH);
             }
 
             int rightAnchorForAuth = btnThemeToggle != null ? btnThemeToggle.Left : btnWinMin.Left;
-            int minLeft = (lblBrand != null ? lblBrand.Right : 144) + 10;
+            int minLeft = (lblBrand != null ? lblBrand.Right : 156) + 4;
 
-            int desiredLogoutW = Math.Max(96, MeasurePillBtnWidth("Đăng xuất", 8.5F, 17));
-            int maxLogoutW = Math.Max(74, rightAnchorForAuth - minLeft - 6);
+            int desiredLogoutW = Math.Max(96, MeasurePillBtnWidth(btnLogoutTop?.Text ?? "Đăng xuất", 8.5F, 17));
+            int maxLogoutW = Math.Max(74, rightAnchorForAuth - minLeft - 5);
             int logoutW = Math.Min(desiredLogoutW, maxLogoutW);
-            btnLogoutTop.Size = new Size(logoutW, 34);
-            btnLogoutTop.Location = new Point(rightAnchorForAuth - logoutW - 6, 12);
+            if (btnLogoutTop != null)
+            {
+                btnLogoutTop.Size = new Size(logoutW, 34);
+                btnLogoutTop.Location = new Point(rightAnchorForAuth - logoutW - 5, 12);
+            }
 
-            bool hasUser = !string.IsNullOrWhiteSpace(lblHeaderUser?.Text);
-            int chipRightAnchor = btnLogoutTop.Visible ? btnLogoutTop.Left : rightAnchorForAuth;
-            int availForChip = chipRightAnchor - minLeft - 8;
+            if (pnlHeaderUserChip == null || lblHeaderUser == null || avtHeaderUser == null) return;
+
+            string fullDisplay = !string.IsNullOrWhiteSpace(headerUserFullName)
+                ? headerUserFullName
+                : (lblHeaderUser.Text ?? "").Trim();
+            bool hasUser = !string.IsNullOrWhiteSpace(fullDisplay);
+            int chipRightAnchor = (btnLogoutTop != null && btnLogoutTop.Visible) ? btnLogoutTop.Left : rightAnchorForAuth;
+            int availForChip = chipRightAnchor - minLeft - 5;
 
             if (hasUser && this.Width >= 510 && availForChip >= 68)
             {
-                int desiredTextW = TextRenderer.MeasureText(lblHeaderUser.Text, lblHeaderUser.Font).Width + 46;
-                int chipW = Math.Clamp(desiredTextW, 68, Math.Min(210, availForChip));
-                pnlHeaderUserChip.Location = new Point(chipRightAnchor - chipW - 8, 12);
+                const int labelLeft = 32;
+                const int rightPad = 6;
+                const int chipChrome = labelLeft + rightPad;
+                int maxChipW = Math.Min(230, availForChip);
+
+                string shortDisplay = GetShortVietnameseName(fullDisplay);
+                int fullTextW = TextRenderer.MeasureText(fullDisplay, lblHeaderUser.Font).Width;
+                int shortTextW = TextRenderer.MeasureText(shortDisplay, lblHeaderUser.Font).Width;
+
+                bool tightWindow = this.Width <= 610;
+                bool fullFits = (fullTextW + chipChrome + 2) <= maxChipW;
+                bool useShort = !string.IsNullOrEmpty(shortDisplay) &&
+                                shortDisplay != fullDisplay &&
+                                (tightWindow || !fullFits);
+
+                string chosenText = useShort ? shortDisplay : fullDisplay;
+                int chosenTextW = useShort ? shortTextW : fullTextW;
+
+                if (lblHeaderUser.Text != chosenText)
+                {
+                    lblHeaderUser.Text = chosenText;
+                }
+
+                int chipW = Math.Clamp(chosenTextW + chipChrome + 2, 68, maxChipW);
+                pnlHeaderUserChip.Location = new Point(chipRightAnchor - chipW - 5, 12);
                 pnlHeaderUserChip.Size = new Size(chipW, 34);
-                lblHeaderUser.Width = Math.Max(28, chipW - 38);
+                avtHeaderUser.Location = new Point(4, 4);
+                avtHeaderUser.Size = new Size(26, 26);
+                lblHeaderUser.Location = new Point(labelLeft, 4);
+                lblHeaderUser.Size = new Size(Math.Max(28, chipW - labelLeft - 4), 26);
                 pnlHeaderUserChip.Visible = true;
             }
             else
