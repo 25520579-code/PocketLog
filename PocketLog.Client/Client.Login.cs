@@ -24,6 +24,12 @@ namespace PocketLog.Client
             private Rectangle badgeBounds;
             private Rectangle cloudChipBounds;
 
+            public Rectangle InnerHeroBounds => new Rectangle(
+                4,
+                2,
+                Math.Max(4, ClientSize.Width - 8),
+                Math.Max(4, ClientSize.Height - 8));
+
             public HeroBannerPanel(Client owner)
             {
                 this.owner = owner;
@@ -31,11 +37,10 @@ namespace PocketLog.Client
                     ControlStyles.AllPaintingInWmPaint |
                     ControlStyles.UserPaint |
                     ControlStyles.OptimizedDoubleBuffer |
-                    ControlStyles.ResizeRedraw |
-                    ControlStyles.SupportsTransparentBackColor,
+                    ControlStyles.ResizeRedraw,
                     true);
                 DoubleBuffered = true;
-                BackColor = Color.Transparent;
+                BackColor = owner != null ? owner.clrAppBg : Color.White;
             }
 
             public void SetAccentRegions(Rectangle brandBadgeRect, Rectangle cloudRect)
@@ -47,14 +52,26 @@ namespace PocketLog.Client
 
             protected override void OnPaint(PaintEventArgs e)
             {
-                if (Width <= 4 || Height <= 4) return;
+                if (Width <= 10 || Height <= 10) return;
                 Graphics g = e.Graphics;
+                Rectangle inner = InnerHeroBounds;
+
+                PaintElevatedCardSurface(
+                    g,
+                    inner,
+                    26,
+                    Color.Transparent,
+                    Color.Transparent,
+                    0,
+                    elevationLevel: 2,
+                    isDarkMode: owner.isDarkMode);
+
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
                 AppPalette p = owner.CurrentTheme;
-                var rect = new RectangleF(0.5f, 0.5f, Math.Max(2f, Width - 1f), Math.Max(2f, Height - 1f));
+                var rect = new RectangleF(inner.X + 0.5f, inner.Y + 0.5f, Math.Max(2f, inner.Width - 1f), Math.Max(2f, inner.Height - 1f));
                 using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, 26f);
 
                 using (var grad = new LinearGradientBrush(rect, p.HeroGradStart, p.HeroGradEnd, 28f))
@@ -68,45 +85,63 @@ namespace PocketLog.Client
                 }
 
                 GraphicsState gState = g.Save();
-                g.SetClip(path, CombineMode.Intersect);
-                using (var glow1 = new SolidBrush(Color.FromArgb(24, 255, 255, 255)))
-                using (var glow2 = new SolidBrush(Color.FromArgb(16, 255, 255, 255)))
+                try
                 {
-                    g.FillEllipse(glow1, Width - 118, -36, 150, 150);
-                    g.FillEllipse(glow2, -26, Height - 58, 120, 120);
+                    g.SetClip(path, CombineMode.Intersect);
+                    using (var glow1 = new SolidBrush(Color.FromArgb(24, 255, 255, 255)))
+                    using (var glow2 = new SolidBrush(Color.FromArgb(16, 255, 255, 255)))
+                    {
+                        g.FillEllipse(glow1, inner.Right - 118, inner.Top - 36, 150, 150);
+                        g.FillEllipse(glow2, inner.Left - 26, inner.Bottom - 58, 120, 120);
+                    }
+
+                    if (badgeBounds.Width > 8 && badgeBounds.Height > 8)
+                    {
+                        using GraphicsPath badgePath = CreateRoundedPath(badgeBounds.X, badgeBounds.Y, badgeBounds.Width, badgeBounds.Height, 16f);
+                        using var badgeFill = new SolidBrush(Color.FromArgb(46, 255, 255, 255));
+                        using var badgeBorder = new Pen(Color.FromArgb(85, 255, 255, 255), 1f);
+                        g.FillPath(badgeFill, badgePath);
+                        g.DrawPath(badgeBorder, badgePath);
+
+                        int icoSz = Math.Max(18, (int)(badgeBounds.Width * 0.52f));
+                        using Bitmap brandIco = owner.CreateVectorIcon(UiIcon.Brand, Color.White, icoSz);
+                        g.DrawImage(
+                            brandIco,
+                            badgeBounds.X + (badgeBounds.Width - icoSz) / 2,
+                            badgeBounds.Y + (badgeBounds.Height - icoSz) / 2,
+                            icoSz,
+                            icoSz);
+                    }
+
+                    if (cloudChipBounds.Width > 16 && cloudChipBounds.Height > 8)
+                    {
+                        float r = cloudChipBounds.Height / 2f;
+                        using GraphicsPath chipPath = CreateRoundedPath(cloudChipBounds.X, cloudChipBounds.Y, cloudChipBounds.Width, cloudChipBounds.Height, r);
+                        using var chipFill = new SolidBrush(Color.FromArgb(42, 15, 23, 42));
+                        using var chipBorder = new Pen(Color.FromArgb(80, 255, 255, 255), 1f);
+                        g.FillPath(chipFill, chipPath);
+                        g.DrawPath(chipBorder, chipPath);
+                    }
+
+                    float topBandH = Math.Min(inner.Height * 0.48f, 34f);
+                    g.SetClip(new RectangleF(rect.X, rect.Y, rect.Width, topBandH), CombineMode.Intersect);
+                    using (GraphicsPath innerSheenPath = CreateRoundedPath(rect.X + 1f, rect.Y + 1f, Math.Max(2f, rect.Width - 2f), Math.Max(2f, rect.Height - 2f), 25f))
+                    using (var topSheenBrush = new LinearGradientBrush(
+                        new PointF(rect.X, rect.Y + 1f),
+                        new PointF(rect.X, rect.Y + 1f + topBandH),
+                        Color.FromArgb(owner.isDarkMode ? 76 : 96, 255, 255, 255),
+                        Color.FromArgb(0, 255, 255, 255)))
+                    using (var topSheenPen = new Pen(topSheenBrush, 1f))
+                    {
+                        g.DrawPath(topSheenPen, innerSheenPath);
+                    }
+                }
+                finally
+                {
+                    g.Restore(gState);
                 }
 
-                if (badgeBounds.Width > 8 && badgeBounds.Height > 8)
-                {
-                    using GraphicsPath badgePath = CreateRoundedPath(badgeBounds.X, badgeBounds.Y, badgeBounds.Width, badgeBounds.Height, 16f);
-                    using var badgeFill = new SolidBrush(Color.FromArgb(46, 255, 255, 255));
-                    using var badgeBorder = new Pen(Color.FromArgb(85, 255, 255, 255), 1f);
-                    g.FillPath(badgeFill, badgePath);
-                    g.DrawPath(badgeBorder, badgePath);
-
-                    int icoSz = Math.Max(18, (int)(badgeBounds.Width * 0.52f));
-                    using Bitmap brandIco = owner.CreateVectorIcon(UiIcon.Brand, Color.White, icoSz);
-                    g.DrawImage(
-                        brandIco,
-                        badgeBounds.X + (badgeBounds.Width - icoSz) / 2,
-                        badgeBounds.Y + (badgeBounds.Height - icoSz) / 2,
-                        icoSz,
-                        icoSz);
-                }
-
-                if (cloudChipBounds.Width > 16 && cloudChipBounds.Height > 8)
-                {
-                    float r = cloudChipBounds.Height / 2f;
-                    using GraphicsPath chipPath = CreateRoundedPath(cloudChipBounds.X, cloudChipBounds.Y, cloudChipBounds.Width, cloudChipBounds.Height, r);
-                    using var chipFill = new SolidBrush(Color.FromArgb(42, 15, 23, 42));
-                    using var chipBorder = new Pen(Color.FromArgb(80, 255, 255, 255), 1f);
-                    g.FillPath(chipFill, chipPath);
-                    g.DrawPath(chipBorder, chipPath);
-                }
-
-                g.Restore(gState);
-
-                using (var sheenPen = new Pen(Color.FromArgb(48, 255, 255, 255), 1f))
+                using (var sheenPen = new Pen(Color.FromArgb(owner.isDarkMode ? 44 : 52, 255, 255, 255), 1f))
                 {
                     g.DrawPath(sheenPen, path);
                 }
@@ -137,12 +172,13 @@ namespace PocketLog.Client
             var pnlHero = new HeroBannerPanel(this)
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 118),
+                Size = new Size(w, 126),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             AttachEdgeResizeRedirector(pnlHero);
 
-            var lblHeroTitle = MakeLabel("PocketLog", 76, 20, 13.5F, FontStyle.Bold, Color.White, 140);
+            Rectangle heroInner = pnlHero.InnerHeroBounds;
+            var lblHeroTitle = MakeLabel("PocketLog", heroInner.X + 76, heroInner.Y + 20, 13.5F, FontStyle.Bold, Color.White, 140);
             SetControlFont(lblHeroTitle, FontBold(13.5F));
             lblHeroTitle.Height = TextRenderer.MeasureText("Ág", lblHeroTitle.Font).Height + 4;
 
@@ -160,33 +196,33 @@ namespace PocketLog.Client
 
             var lblHeroSub = MakeLabel(
                 "Chia sẻ khoảnh khắc • Chia bill sòng phẳng",
-                76,
-                56,
+                heroInner.X + 76,
+                heroInner.Y + 56,
                 9.0F,
                 FontStyle.Regular,
                 Color.FromArgb(236, 242, 255),
-                Math.Max(160, w - 92),
+                Math.Max(140, heroInner.Width - 92),
                 lines: 2);
             lblHeroSub.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             void LayoutHeroHeader()
             {
                 if (pnlHero.IsDisposed) return;
-                int hw = pnlHero.Width;
-                var badgeRect = new Rectangle(16, 33, 48, 48);
+                Rectangle inner = pnlHero.InnerHeroBounds;
+                var badgeRect = new Rectangle(inner.X + 16, inner.Y + 33, 48, 48);
 
                 int chipTextW = TextRenderer.MeasureText(
                     lblCloudChip.Text,
                     lblCloudChip.Font,
                     new Size(600, 40),
                     TextFormatFlags.SingleLine).Width;
-                int maxChipW = Math.Max(92, hw - 206);
+                int maxChipW = Math.Max(92, inner.Width - 206);
                 int chipW = Math.Clamp(chipTextW + 18, 92, maxChipW);
-                var chipRect = new Rectangle(hw - chipW - 14, 20, chipW, 24);
+                var chipRect = new Rectangle(inner.Right - chipW - 14, inner.Y + 20, chipW, 24);
 
                 lblCloudChip.Bounds = new Rectangle(chipRect.X + 4, chipRect.Y, Math.Max(16, chipRect.Width - 8), chipRect.Height);
-                lblHeroTitle.Width = Math.Max(110, chipRect.Left - 76 - 6);
-                lblHeroSub.Width = Math.Max(140, hw - 92);
+                lblHeroTitle.Width = Math.Max(110, chipRect.Left - (inner.X + 76) - 6);
+                lblHeroSub.Width = Math.Max(140, inner.Width - 92);
 
                 pnlHero.SetAccentRegions(badgeRect, chipRect);
             }
@@ -198,31 +234,34 @@ namespace PocketLog.Client
             LayoutHeroHeader();
 
             col.Controls.Add(pnlHero);
-            y += 132;
+            y += 134;
 
-            Guna2Panel cardServer = new Guna2Panel
+            var cardServer = new ElevatedCardPanel(this)
             {
+                Name = "cardServer",
                 Location = new Point(0, y),
-                Size = new Size(w, 134),
+                Size = new Size(w, 142),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 22,
-                FillColor = clrCardBg,
-                BorderColor = clrBorderLight,
-                BorderThickness = 1,
-                UseTransparentBackground = true
+                CornerRadius = 24,
+                ElevationLevel = 2,
+                CardFillColor = clrCardBg,
+                CardBorderColor = clrBorderLight,
+                CardBorderThickness = 1,
+                BackColor = clrAppBg
             };
 
+            Rectangle srvInner = cardServer.InnerCardBounds;
             int discBtnW = Math.Max(144, MeasurePillBtnWidth("Dò Server LAN", 8.5F, 17));
-            var btnDiscoverServer = MakeBtn("Dò Server LAN", w - discBtnW - 16, 14, discBtnW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.5F);
+            var btnDiscoverServer = MakeBtn("Dò Server LAN", srvInner.Right - discBtnW - 16, srvInner.Y + 14, discBtnW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.5F);
             btnDiscoverServer.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnDiscoverServer.HoverState.FillColor = clrPrimaryGreen;
             btnDiscoverServer.HoverState.ForeColor = Color.White;
             btnDiscoverServer.HoverState.BorderColor = clrPrimaryGreen;
 
-            var lblSrvTitle = MakeLabel("Máy chủ kết nối", 18, 17, 10F, FontStyle.Bold, accentText, Math.Max(100, btnDiscoverServer.Left - 26));
+            var lblSrvTitle = MakeLabel("Máy chủ kết nối", srvInner.X + 18, srvInner.Y + 17, 10F, FontStyle.Bold, accentText, Math.Max(100, btnDiscoverServer.Left - (srvInner.X + 18) - 8));
             lblSrvTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            var lblSrvSub = MakeLabel("Nhập IP/Domain hoặc bấm Dò Server LAN (UDP 8889)", 18, 49, 8.4F, FontStyle.Regular, clrTextMuted, w - 36);
+            var lblSrvSub = MakeLabel("Nhập IP/Domain hoặc bấm Dò Server LAN (UDP 8889)", srvInner.X + 18, srvInner.Y + 49, 8.4F, FontStyle.Regular, clrTextMuted, Math.Max(120, srvInner.Width - 36));
             lblSrvSub.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             cardServer.Controls.Add(lblSrvTitle);
@@ -231,8 +270,8 @@ namespace PocketLog.Client
 
             var gridServer = new BufferedTableLayout
             {
-                Location = new Point(16, 78),
-                Size = new Size(w - 32, 44),
+                Location = new Point(srvInner.X + 16, srvInner.Y + 78),
+                Size = new Size(Math.Max(120, srvInner.Width - 32), 44),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ColumnCount = 2,
                 RowCount = 1
@@ -258,24 +297,31 @@ namespace PocketLog.Client
             gridServer.Controls.Add(txtServerPort, 1, 0);
             cardServer.Controls.Add(gridServer);
             col.Controls.Add(cardServer);
-            y += 148;
+            y += 150;
 
-            Guna2Panel cardAuth = new Guna2Panel
+            var cardAuth = new ElevatedCardPanel(this)
             {
+                Name = "cardAuth",
                 Location = new Point(0, y),
-                Size = new Size(w, 382),
+                Size = new Size(w, 390),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 24,
-                FillColor = clrCardBg,
-                BorderColor = clrBorderLight,
-                BorderThickness = 1,
-                UseTransparentBackground = true
+                CornerRadius = 24,
+                ElevationLevel = 2,
+                CardFillColor = clrCardBg,
+                CardBorderColor = clrBorderLight,
+                CardBorderThickness = 1,
+                BackColor = clrAppBg
             };
+
+            Rectangle authInner = cardAuth.InnerCardBounds;
+            int authPadX = authInner.X + 18;
+            int authTopY = authInner.Y;
+            int authFieldW = Math.Max(120, authInner.Width - 36);
 
             Guna2Panel segTrack = new Guna2Panel
             {
-                Location = new Point(18, 18),
-                Size = new Size(w - 36, 46),
+                Location = new Point(authPadX, authTopY + 18),
+                Size = new Size(authFieldW, 46),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 16,
                 FillColor = clrAppBg,
@@ -307,20 +353,20 @@ namespace PocketLog.Client
             gridSeg.Controls.Add(btnModeReg, 1, 0);
             segTrack.Controls.Add(gridSeg);
 
-            Label lblUserTitle = MakeLabel("Tên tài khoản hoặc họ tên hiển thị", 18, 78, 9.5F, FontStyle.Bold, clrTextMain, w - 36);
+            Label lblUserTitle = MakeLabel("Tên tài khoản hoặc họ tên hiển thị", authPadX, authTopY + 78, 9.5F, FontStyle.Bold, clrTextMain, authFieldW);
             lblUserTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            var txtUsername = MakeTextBox("", "Nhập tên tài khoản...", 18, 106, w - 36, 44, clrCardBg);
+            var txtUsername = MakeTextBox("", "Nhập tên tài khoản...", authPadX, authTopY + 106, authFieldW, 44, clrCardBg);
             txtUsername.Name = "txtUsername";
             txtUsername.BorderRadius = 14;
             txtUsername.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            Label lblPassTitle = MakeLabel("Mật khẩu", 18, 162, 9.5F, FontStyle.Bold, clrTextMain, w - 36);
+            Label lblPassTitle = MakeLabel("Mật khẩu", authPadX, authTopY + 162, 9.5F, FontStyle.Bold, clrTextMain, authFieldW);
             lblPassTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             var passRow = new BufferedTableLayout
             {
-                Location = new Point(18, 190),
-                Size = new Size(w - 36, 44),
+                Location = new Point(authPadX, authTopY + 190),
+                Size = new Size(authFieldW, 44),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 ColumnCount = 2,
                 RowCount = 1
@@ -352,9 +398,9 @@ namespace PocketLog.Client
             passRow.Controls.Add(txtPassword, 0, 0);
             passRow.Controls.Add(btnTogglePass, 1, 0);
 
-            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ)", 18, 246, 9.5F, FontStyle.Bold, accentText, w - 36);
+            Label lblInitBudget = MakeLabel("Hạn mức chi tiêu tháng (VNĐ)", authPadX, authTopY + 246, 9.5F, FontStyle.Bold, accentText, authFieldW);
             lblInitBudget.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            var txtInitBudget = MakeTextBox("3500000", "Ví dụ: 3500000", 18, 274, w - 36, 42, clrCardBg, true);
+            var txtInitBudget = MakeTextBox("3500000", "Ví dụ: 3500000", authPadX, authTopY + 274, authFieldW, 42, clrCardBg, true);
             txtInitBudget.Name = "txtInitBudget";
             txtInitBudget.BorderRadius = 14;
             txtInitBudget.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -366,16 +412,16 @@ namespace PocketLog.Client
                 : initialNotice;
 
             Label lblAuthStatus = MakeLabel(
-                defaultHint, 18, 248, 8.8F, FontStyle.Regular,
+                defaultHint, authPadX, authTopY + 248, 8.8F, FontStyle.Regular,
                 string.IsNullOrEmpty(initialNotice) ? clrTextMuted : clrRedDanger,
-                w - 36, lines: 2);
+                authFieldW, lines: 2);
             lblAuthStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             var btnSubmitAuth = new Guna2GradientButton
             {
                 Text = "Đăng nhập",
-                Location = new Point(18, 308),
-                Size = new Size(w - 36, 52),
+                Location = new Point(authPadX, authTopY + 308),
+                Size = new Size(authFieldW, 52),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BorderRadius = 24,
                 FillColor = theme.AccentPrimary,
@@ -416,9 +462,9 @@ namespace PocketLog.Client
 
                     lblInitBudget.Visible = true;
                     txtInitBudget.Visible = true;
-                    lblAuthStatus.Location = new Point(18, 322);
-                    btnSubmitAuth.Location = new Point(18, 382);
-                    cardAuth.Height = 456;
+                    lblAuthStatus.Location = new Point(authPadX, authTopY + 322);
+                    btnSubmitAuth.Location = new Point(authPadX, authTopY + 382);
+                    cardAuth.Height = 464;
                     txtUsername.PlaceholderText = "Nhập tên hiển thị / tài khoản mới...";
                     btnSubmitAuth.Text = "Tạo tài khoản";
                     if (updateStatusHint)
@@ -436,9 +482,9 @@ namespace PocketLog.Client
 
                     lblInitBudget.Visible = false;
                     txtInitBudget.Visible = false;
-                    lblAuthStatus.Location = new Point(18, 248);
-                    btnSubmitAuth.Location = new Point(18, 308);
-                    cardAuth.Height = 382;
+                    lblAuthStatus.Location = new Point(authPadX, authTopY + 248);
+                    btnSubmitAuth.Location = new Point(authPadX, authTopY + 308);
+                    cardAuth.Height = 390;
                     txtUsername.PlaceholderText = "Nhập tên tài khoản...";
                     btnSubmitAuth.Text = "Đăng nhập";
                     if (updateStatusHint)
@@ -538,8 +584,6 @@ namespace PocketLog.Client
 
             col.Controls.Add(cardAuth);
             col.Height = y + cardAuth.Height + 20;
-            AttachEdgeResizeRedirector(cardServer);
-            AttachEdgeResizeRedirector(cardAuth);
 
             authDraftCapture = () =>
             {

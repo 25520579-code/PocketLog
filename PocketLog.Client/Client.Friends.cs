@@ -10,6 +10,19 @@ namespace PocketLog.Client
 {
     public partial class Client
     {
+        private sealed class DrawerBackdropPanel : Panel
+        {
+            public DrawerBackdropPanel()
+            {
+                DoubleBuffered = true;
+                SetStyle(
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.ResizeRedraw,
+                    true);
+            }
+        }
+
         private string currentFriendsSearchKeyword = "";
 
         private int ComputeDrawerWidth(int backdropWidth)
@@ -21,7 +34,7 @@ namespace PocketLog.Client
 
         private void SetupFriendsDrawer()
         {
-            pnlDrawerBackdrop = new Panel
+            pnlDrawerBackdrop = new DrawerBackdropPanel
             {
                 Location = new Point(1, 56),
                 Size = new Size(this.ClientSize.Width - 2, this.ClientSize.Height - 124),
@@ -30,6 +43,42 @@ namespace PocketLog.Client
                 Visible = false
             };
             pnlDrawerBackdrop.Click += (s, e) => CloseFriendsDrawer();
+            pnlDrawerBackdrop.Paint += (s, e) =>
+            {
+                if (pnlFriendsDrawer == null || pnlFriendsDrawer.IsDisposed || !pnlFriendsDrawer.Visible)
+                    return;
+
+                int edgeX = pnlFriendsDrawer.Left;
+                int h = pnlDrawerBackdrop.Height;
+                if (h <= 0 || edgeX <= 0 || edgeX > pnlDrawerBackdrop.Width + 14)
+                    return;
+
+                Color shadowBase = isDarkMode ? Color.Black : Color.FromArgb(15, 23, 42);
+                ReadOnlySpan<(int Offset, int Width, int Alpha)> steps = isDarkMode
+                    ? stackalloc (int, int, int)[]
+                    {
+                        (14, 4, 36),
+                        (10, 4, 72),
+                        (6, 3, 118),
+                        (3, 3, 168)
+                    }
+                    : stackalloc (int, int, int)[]
+                    {
+                        (14, 4, 12),
+                        (10, 4, 24),
+                        (6, 3, 40),
+                        (3, 3, 62)
+                    };
+
+                foreach (var step in steps)
+                {
+                    int x = edgeX - step.Offset;
+                    int sw = step.Width;
+                    if (x + sw <= 0 || x >= pnlDrawerBackdrop.Width) continue;
+                    using var brush = new SolidBrush(Color.FromArgb(step.Alpha, shadowBase));
+                    e.Graphics.FillRectangle(brush, x, 0, sw, h);
+                }
+            };
 
             pnlFriendsDrawer = new Guna2Panel
             {
@@ -54,27 +103,39 @@ namespace PocketLog.Client
                     drawerTargetX = pnlDrawerBackdrop.Width - drawerW;
                     pnlFriendsDrawer.Left = drawerTargetX;
                     RenderFriendsDrawerContent(currentFriendsSearchKeyword);
+                    pnlDrawerBackdrop.Invalidate();
                 }
             };
 
             drawerTimer = new System.Windows.Forms.Timer { Interval = 12 };
             drawerTimer.Tick += (s, e) =>
             {
+                if (IsDisposed || pnlDrawerBackdrop == null || pnlDrawerBackdrop.IsDisposed || pnlFriendsDrawer == null || pnlFriendsDrawer.IsDisposed)
+                {
+                    drawerTimer.Stop();
+                    return;
+                }
                 int cur = pnlFriendsDrawer.Left;
                 if (cur > drawerTargetX)
                 {
                     pnlFriendsDrawer.Left = Math.Max(drawerTargetX, cur - Math.Max(28, (cur - drawerTargetX) / 2));
+                    pnlDrawerBackdrop.Invalidate();
                 }
                 else if (cur < drawerTargetX)
                 {
                     pnlFriendsDrawer.Left = Math.Min(drawerTargetX, cur + Math.Max(28, (drawerTargetX - cur) / 2));
+                    pnlDrawerBackdrop.Invalidate();
                     if (pnlFriendsDrawer.Left >= pnlDrawerBackdrop.Width)
                     {
                         pnlDrawerBackdrop.Visible = false;
                         drawerTimer.Stop();
                     }
                 }
-                else drawerTimer.Stop();
+                else
+                {
+                    drawerTimer.Stop();
+                    pnlDrawerBackdrop.Invalidate();
+                }
             };
         }
 
@@ -99,6 +160,7 @@ namespace PocketLog.Client
             pnlDrawerBackdrop.BringToFront();
             pnlFriendsDrawer.Left = pnlDrawerBackdrop.Width;
             drawerTargetX = pnlDrawerBackdrop.Width - drawerW;
+            pnlDrawerBackdrop.Invalidate();
             drawerTimer.Start();
         }
 
@@ -158,23 +220,24 @@ namespace PocketLog.Client
                 listTopY = 134;
             }
 
-            var listScroll = new SmoothScrollPanel
+            var listScroll = new AndroidOverlayScrollPanel(this)
             {
                 Location = new Point(12, listTopY),
                 Size = new Size(dw - 20, pnlFriendsDrawer.Height - listTopY - 12),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
-                AutoScroll = true,
+                CenterColumnMode = false,
                 BackColor = clrCardBg
             };
-            listScroll.MouseEnter += (s, e) => listScroll.Focus();
-            AttachEdgeResizeRedirector(listScroll);
+            listScroll.SyncLayout();
 
-            int rowW = Math.Max(220, dw - 43);
             Action<string> refreshList = (kw) =>
             {
                 currentFriendsSearchKeyword = kw ?? "";
-                var prevRows = listScroll.Controls.Cast<Control>().ToList();
-                listScroll.Controls.Clear();
+                listScroll.SyncLayout();
+                int rowW = Math.Max(220, listScroll.ContentHost.Width);
+                int labelW = Math.Max(180, rowW - 8);
+                var prevRows = listScroll.ContentHost.Controls.Cast<Control>().ToList();
+                listScroll.ContentHost.Controls.Clear();
                 foreach (var pr in prevRows) { try { pr.Dispose(); } catch { } }
                 string q = (kw ?? "").Trim().ToLower();
                 int y = 4;
@@ -183,12 +246,12 @@ namespace PocketLog.Client
                     .Where(f => string.IsNullOrEmpty(q) || f.Name.ToLower().Contains(q) || f.Handle.ToLower().Contains(q))
                     .ToList();
 
-                listScroll.Controls.Add(MakeLabel($"Đã kết nối ({filteredFriends.Count})", 4, y, 8.8F, FontStyle.Bold, accentText, rowW));
+                listScroll.ContentHost.Controls.Add(MakeLabel($"Đã kết nối ({filteredFriends.Count})", 4, y, 8.8F, FontStyle.Bold, accentText, labelW));
                 y += 28;
 
                 if (filteredFriends.Count == 0)
                 {
-                    listScroll.Controls.Add(MakeLabel("Chưa có bạn bè phù hợp. Bạn có thể chọn nhanh bên dưới.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, rowW, lines: 2));
+                    listScroll.ContentHost.Controls.Add(MakeLabel("Chưa có bạn bè phù hợp. Bạn có thể chọn nhanh bên dưới.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, labelW, lines: 2));
                     y += 44;
                 }
                 else
@@ -197,8 +260,8 @@ namespace PocketLog.Client
                     {
                         var card = BuildFriendItemRow(fUser, rowW, true);
                         card.Location = new Point(0, y);
-                        listScroll.Controls.Add(card);
-                        y += 78;
+                        listScroll.ContentHost.Controls.Add(card);
+                        y += 82;
                     }
                 }
 
@@ -207,12 +270,12 @@ namespace PocketLog.Client
                     .Where(s => string.IsNullOrEmpty(q) || s.Name.ToLower().Contains(q) || s.Handle.ToLower().Contains(q))
                     .ToList();
 
-                listScroll.Controls.Add(MakeLabel($"Gợi ý kết bạn trên hệ thống ({filteredSuggestions.Count})", 4, y, 8.8F, FontStyle.Bold, clrIndigo, rowW));
+                listScroll.ContentHost.Controls.Add(MakeLabel($"Gợi ý kết bạn trên hệ thống ({filteredSuggestions.Count})", 4, y, 8.8F, FontStyle.Bold, clrIndigo, labelW));
                 y += 28;
 
                 if (filteredSuggestions.Count == 0)
                 {
-                    listScroll.Controls.Add(MakeLabel("Không còn người dùng mới nào để gợi ý.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, rowW));
+                    listScroll.ContentHost.Controls.Add(MakeLabel("Không còn người dùng mới nào để gợi ý.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, labelW));
                     y += 34;
                 }
                 else
@@ -221,12 +284,14 @@ namespace PocketLog.Client
                     {
                         var card = BuildFriendItemRow(sUser, rowW, false);
                         card.Location = new Point(0, y);
-                        listScroll.Controls.Add(card);
-                        y += 78;
+                        listScroll.ContentHost.Controls.Add(card);
+                        y += 82;
                     }
                 }
 
-                listScroll.Controls.Add(new Label { Location = new Point(0, y), Size = new Size(10, 20) });
+                listScroll.ContentHost.Height = y + 20;
+                listScroll.SyncLayout();
+                listScroll.SetScrollOffset(0, animate: false);
             };
 
             txtSearch.TextChanged += (s, e) => refreshList(txtSearch.Text);
@@ -239,31 +304,35 @@ namespace PocketLog.Client
                     RequesterId = currentUserId,
                     TargetKeyword = raw
                 }));
-                txtSearch.Text = "";
+                if (!txtSearch.IsDisposed) txtSearch.Text = "";
             };
 
             refreshList(keyword);
             pnlFriendsDrawer.Controls.AddRange(new Control[] { txtSearch, btnAddNew, listScroll });
+            pnlDrawerBackdrop?.Invalidate();
         }
 
-        private Guna2Panel BuildFriendItemRow(FriendUser u, int rowWidth, bool isAlreadyFriend)
+        private ElevatedCardPanel BuildFriendItemRow(FriendUser u, int rowWidth, bool isAlreadyFriend)
         {
             AppPalette theme = CurrentTheme;
-            Guna2Panel row = new Guna2Panel
+            var row = new ElevatedCardPanel(this)
             {
-                Size = new Size(rowWidth, 70),
-                BorderRadius = 18,
-                FillColor = clrInputBg,
-                BorderColor = isAlreadyFriend ? clrSoftGreenBorder : clrBorderLight,
-                BorderThickness = 1,
-                UseTransparentBackground = true
+                Size = new Size(rowWidth, 78),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                CornerRadius = 18,
+                ElevationLevel = 1,
+                CardFillColor = clrInputBg,
+                CardBorderColor = isAlreadyFriend ? clrSoftGreenBorder : clrBorderLight,
+                CardBorderThickness = 1,
+                BackColor = clrCardBg
             };
 
+            Rectangle inner = row.InnerCardBounds;
             string initial = GetAvatarInitial(u.Name);
             var avtHost = new Panel
             {
                 Size = new Size(46, 46),
-                Location = new Point(8, 12),
+                Location = new Point(inner.X + 8, inner.Y + 12),
                 BackColor = Color.Transparent
             };
             avtHost.Paint += (s, e) =>
@@ -323,15 +392,15 @@ namespace PocketLog.Client
             int actionBtnW = Math.Max(98, Math.Max(
                 MeasurePillBtnWidth("+ Kết bạn", 8.2F, 14),
                 MeasurePillBtnWidth("Chắc xóa?", 8.2F, 14)));
-            int textMaxW = Math.Max(70, rowWidth - 58 - actionBtnW - 12);
+            int textMaxW = Math.Max(70, inner.Width - 58 - actionBtnW - 12);
 
             string stateLabel = u.IsOnline ? "Đang hoạt động" : "Ngoại tuyến";
             Color stateColor = u.IsOnline ? theme.Success : clrTextMuted;
 
-            var lblName = MakeLabel(u.Name, 58, 11, 9.6F, FontStyle.Bold, clrTextMain, textMaxW);
+            var lblName = MakeLabel(u.Name, inner.X + 58, inner.Y + 11, 9.6F, FontStyle.Bold, clrTextMain, textMaxW);
             lblName.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            var lblSub = MakeLabel($"{u.Handle} • {stateLabel}", 58, 39, 8.2F, FontStyle.Regular, stateColor, textMaxW);
+            var lblSub = MakeLabel($"{u.Handle} • {stateLabel}", inner.X + 58, inner.Y + 39, 8.2F, FontStyle.Regular, stateColor, textMaxW);
             lblSub.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             row.Controls.Add(avtHost);
@@ -341,7 +410,7 @@ namespace PocketLog.Client
             if (isAlreadyFriend)
             {
                 bool confirmRemove = false;
-                var btnRemove = MakeBtn("Xóa bạn", rowWidth - actionBtnW - 8, 17, actionBtnW, 36, 14, clrCardBg, clrIndigo, clrBorderLight, 1, 8.2F);
+                var btnRemove = MakeBtn("Xóa bạn", inner.Right - actionBtnW - 8, inner.Y + 17, actionBtnW, 36, 14, clrCardBg, clrIndigo, clrBorderLight, 1, 8.2F);
                 btnRemove.Anchor = AnchorStyles.Top | AnchorStyles.Right;
                 btnRemove.HoverState.FillColor = clrSoftRedBg;
                 btnRemove.HoverState.ForeColor = clrRedDanger;
@@ -368,7 +437,7 @@ namespace PocketLog.Client
             }
             else
             {
-                var btnQuickAdd = MakeBtn("+ Kết bạn", rowWidth - actionBtnW - 8, 17, actionBtnW, 36, 14, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 8.2F);
+                var btnQuickAdd = MakeBtn("+ Kết bạn", inner.Right - actionBtnW - 8, inner.Y + 17, actionBtnW, 36, 14, clrPrimaryGreen, Color.White, clrPrimaryGreen, 0, 8.2F);
                 btnQuickAdd.Anchor = AnchorStyles.Top | AnchorStyles.Right;
                 btnQuickAdd.Click += async (s, e) =>
                 {
