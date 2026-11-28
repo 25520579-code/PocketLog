@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
@@ -22,10 +23,23 @@ namespace PocketLog.Client
             private Rectangle pillRect;
             private string pillText = "";
 
+            public Rectangle InnerWalletBounds => new Rectangle(
+                4,
+                2,
+                Math.Max(4, ClientSize.Width - 8),
+                Math.Max(4, ClientSize.Height - 8));
+
             public WalletGradientPanel(Client owner)
             {
                 this.owner = owner;
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint |
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.ResizeRedraw,
+                    true);
                 DoubleBuffered = true;
+                BackColor = owner != null ? owner.clrAppBg : Color.White;
             }
 
             public int UnpaidCount
@@ -78,97 +92,223 @@ namespace PocketLog.Client
                 Invalidate();
             }
 
-            protected override void OnPaintBackground(PaintEventArgs e)
+            private void PaintWalletBaseSurface(Graphics g)
             {
-                base.OnPaintBackground(e);
-                if (Width <= 4 || Height <= 4) return;
+                Color backdrop = owner != null
+                    ? owner.clrAppBg
+                    : (BackColor.A == 255 ? BackColor : Color.White);
+                using (var bgBrush = new SolidBrush(backdrop))
+                {
+                    g.FillRectangle(bgBrush, ClientRectangle);
+                }
 
-                Graphics g = e.Graphics;
+                Rectangle inner = InnerWalletBounds;
+                if (inner.Width < 8 || inner.Height < 8) return;
+
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-                var rect = new RectangleF(0.5f, 0.5f, Math.Max(2f, Width - 1f), Math.Max(2f, Height - 1f));
-                using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, BorderRadius);
-                using var grad = new LinearGradientBrush(rect, FillColor, FillColor2, LinearGradientMode.ForwardDiagonal);
-                grad.WrapMode = WrapMode.TileFlipXY;
-                g.FillPath(grad, path);
+                float radius = Math.Max(4f, Math.Min(BorderRadius, Math.Min(inner.Width, inner.Height) / 2f));
+                bool dark = owner != null && owner.isDarkMode;
 
-                PaintDecorativeGlows(g, path);
+                // Soft bottom ambient drop shadow subtly tinted with WalletGradStart
+                Color shadowBase = dark
+                    ? Color.Black
+                    : BlendControlColor(FillColor, Color.FromArgb(15, 23, 42), 0.42f);
+
+                using (GraphicsPath s3 = CreateRoundedPath(inner.X - 2.5f, inner.Y + 5f, inner.Width + 5f, inner.Height, radius + 2f))
+                using (var b3 = new SolidBrush(Color.FromArgb(dark ? 28 : 14, shadowBase)))
+                {
+                    g.FillPath(b3, s3);
+                }
+                using (GraphicsPath s2 = CreateRoundedPath(inner.X - 1.5f, inner.Y + 3f, inner.Width + 3f, inner.Height, radius + 1f))
+                using (var b2 = new SolidBrush(Color.FromArgb(dark ? 50 : 24, shadowBase)))
+                {
+                    g.FillPath(b2, s2);
+                }
+                using (GraphicsPath s1 = CreateRoundedPath(inner.X - 0.5f, inner.Y + 1.5f, inner.Width + 1f, inner.Height, radius + 0.5f))
+                using (var b1 = new SolidBrush(Color.FromArgb(dark ? 78 : 36, shadowBase)))
+                {
+                    g.FillPath(b1, s1);
+                }
+
+                var rect = new RectangleF(inner.X + 0.5f, inner.Y + 0.5f, Math.Max(2f, inner.Width - 1f), Math.Max(2f, inner.Height - 1f));
+                using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, radius);
+                using (var grad = new LinearGradientBrush(rect, FillColor, FillColor2, LinearGradientMode.ForwardDiagonal))
+                {
+                    grad.WrapMode = WrapMode.TileFlipXY;
+                    g.FillPath(grad, path);
+                }
+
+                PaintDecorativeGlows(g, path, inner);
+            }
+
+            protected override void OnPaintBackground(PaintEventArgs e)
+            {
+                if (Width <= 8 || Height <= 8) return;
+                PaintWalletBaseSurface(e.Graphics);
             }
 
             protected override void OnPaint(PaintEventArgs e)
             {
-                base.OnPaint(e);
-                if (Width <= 4 || Height <= 4) return;
+                if (Width <= 8 || Height <= 8) return;
 
                 Graphics g = e.Graphics;
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-                var rect = new RectangleF(0.5f, 0.5f, Math.Max(2f, Width - 1f), Math.Max(2f, Height - 1f));
-                using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, BorderRadius);
-
-                PaintDecorativeGlows(g, path);
+                Rectangle inner = InnerWalletBounds;
+                float radius = Math.Max(4f, Math.Min(BorderRadius, Math.Min(inner.Width, inner.Height) / 2f));
+                var rect = new RectangleF(inner.X + 0.5f, inner.Y + 0.5f, Math.Max(2f, inner.Width - 1f), Math.Max(2f, inner.Height - 1f));
+                using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, radius);
 
                 GraphicsState saved = g.Save();
-                g.SetClip(path, CombineMode.Intersect);
-
-                if (dividerX > 40 && dividerX < Width - 40)
+                try
                 {
-                    using var divPen = new Pen(Color.FromArgb(68, 255, 255, 255), 1f);
-                    g.DrawLine(divPen, dividerX, 16f, dividerX, Height - 16f);
-                }
+                    g.SetClip(path, CombineMode.Intersect);
 
-                if (unpaidCount > 0 && pillRect.Width >= 24 && pillRect.Height >= 16 && !string.IsNullOrEmpty(pillText))
-                {
-                    using GraphicsPath pPath = CreateRoundedPath(pillRect.X, pillRect.Y, pillRect.Width, pillRect.Height, pillRect.Height / 2f);
-                    using var pFill = new SolidBrush(Color.FromArgb(64, 15, 23, 42));
-                    using var pBorder = new Pen(Color.FromArgb(95, 255, 255, 255), 1f);
-                    g.FillPath(pFill, pPath);
-                    g.DrawPath(pBorder, pPath);
-
-                    const int dotSize = 6;
-                    float dotX = pillRect.X + 7f;
-                    float dotY = pillRect.Y + (pillRect.Height - dotSize) / 2f;
-                    Color dotClr = unpaidDotColor.A == 0 ? Color.FromArgb(244, 63, 94) : unpaidDotColor;
-                    using (var dotBrush = new SolidBrush(dotClr))
+                    if (dividerX > inner.Left + 40 && dividerX < inner.Right - 40)
                     {
-                        g.FillEllipse(dotBrush, dotX, dotY, dotSize, dotSize);
+                        using var divPen = new Pen(Color.FromArgb(68, 255, 255, 255), 1f);
+                        g.DrawLine(divPen, dividerX, inner.Top + 14f, dividerX, inner.Bottom - 14f);
                     }
 
-                    using Font pillFont = owner != null ? owner.FontMedium(7.4F) : new Font("Segoe UI", 7.4F, FontStyle.Bold);
-                    var textRect = new Rectangle(
-                        pillRect.X + 14,
-                        pillRect.Y,
-                        Math.Max(12, pillRect.Width - 18),
-                        pillRect.Height);
-                    TextRenderer.DrawText(
-                        g,
-                        pillText,
-                        pillFont,
-                        textRect,
-                        Color.White,
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                    if (unpaidCount > 0 && pillRect.Width >= 24 && pillRect.Height >= 16 && !string.IsNullOrEmpty(pillText))
+                    {
+                        using GraphicsPath pPath = CreateRoundedPath(pillRect.X, pillRect.Y, pillRect.Width, pillRect.Height, pillRect.Height / 2f);
+                        using var pFill = new SolidBrush(Color.FromArgb(64, 15, 23, 42));
+                        using var pBorder = new Pen(Color.FromArgb(95, 255, 255, 255), 1f);
+                        g.FillPath(pFill, pPath);
+                        g.DrawPath(pBorder, pPath);
+
+                        const int dotSize = 6;
+                        float dotX = pillRect.X + 7f;
+                        float dotY = pillRect.Y + (pillRect.Height - dotSize) / 2f;
+                        Color dotClr = unpaidDotColor.A == 0 ? Color.FromArgb(244, 63, 94) : unpaidDotColor;
+                        using (var dotBrush = new SolidBrush(dotClr))
+                        {
+                            g.FillEllipse(dotBrush, dotX, dotY, dotSize, dotSize);
+                        }
+
+                        using Font pillFont = owner != null ? owner.FontMedium(7.4F) : new Font("Segoe UI", 7.4F, FontStyle.Bold);
+                        var textRect = new Rectangle(
+                            pillRect.X + 14,
+                            pillRect.Y,
+                            Math.Max(12, pillRect.Width - 18),
+                            pillRect.Height);
+                        TextRenderer.DrawText(
+                            g,
+                            pillText,
+                            pillFont,
+                            textRect,
+                            Color.White,
+                            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                    }
+                }
+                finally
+                {
+                    g.Restore(saved);
                 }
 
-                g.Restore(saved);
-
-                using var sheenPen = new Pen(Color.FromArgb(42, 255, 255, 255), 1f);
+                using var sheenPen = new Pen(Color.FromArgb(46, 255, 255, 255), 1f);
                 g.DrawPath(sheenPen, path);
             }
 
-            private void PaintDecorativeGlows(Graphics g, GraphicsPath clipPath)
+            private void PaintDecorativeGlows(Graphics g, GraphicsPath clipPath, Rectangle inner)
             {
                 GraphicsState saved = g.Save();
-                g.SetClip(clipPath, CombineMode.Intersect);
-                using (var glowTop = new SolidBrush(Color.FromArgb(20, 255, 255, 255)))
-                using (var glowBot = new SolidBrush(Color.FromArgb(12, 255, 255, 255)))
+                try
                 {
-                    g.FillEllipse(glowTop, Width - 88, -32, 118, 118);
-                    g.FillEllipse(glowBot, -24, Height - 44, 92, 92);
+                    g.SetClip(clipPath, CombineMode.Intersect);
+                    using (var glowTop = new SolidBrush(Color.FromArgb(20, 255, 255, 255)))
+                    using (var glowBot = new SolidBrush(Color.FromArgb(12, 255, 255, 255)))
+                    {
+                        g.FillEllipse(glowTop, inner.Right - 88, inner.Top - 32, 118, 118);
+                        g.FillEllipse(glowBot, inner.Left - 24, inner.Bottom - 44, 92, 92);
+                    }
+
+                    // Subtle diagonal translucent glass highlight arc
+                    using (var sheenPath = new GraphicsPath())
+                    {
+                        float startX = inner.Left + inner.Width * 0.14f;
+                        float endX = inner.Left + inner.Width * 0.62f;
+                        sheenPath.AddBezier(
+                            new PointF(startX, inner.Top - 6f),
+                            new PointF(startX + inner.Width * 0.18f, inner.Top + inner.Height * 0.34f),
+                            new PointF(endX - inner.Width * 0.08f, inner.Top + inner.Height * 0.56f),
+                            new PointF(endX + 26f, inner.Bottom + 8f));
+                        sheenPath.AddLine(endX + 26f, inner.Bottom + 8f, endX - 24f, inner.Bottom + 8f);
+                        sheenPath.AddBezier(
+                            new PointF(endX - 24f, inner.Bottom + 8f),
+                            new PointF(endX - inner.Width * 0.18f, inner.Top + inner.Height * 0.54f),
+                            new PointF(startX + inner.Width * 0.05f, inner.Top + inner.Height * 0.30f),
+                            new PointF(startX - 38f, inner.Top - 6f));
+                        sheenPath.CloseFigure();
+
+                        using var glassBrush = new SolidBrush(Color.FromArgb(22, 255, 255, 255));
+                        g.FillPath(glassBrush, sheenPath);
+                    }
                 }
-                g.Restore(saved);
+                finally
+                {
+                    g.Restore(saved);
+                }
+            }
+        }
+
+        private sealed class CategoryPercentPill : Label
+        {
+            public Color PillFillColor { get; set; }
+            public Color PillBorderColor { get; set; }
+
+            public CategoryPercentPill()
+            {
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint |
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.ResizeRedraw,
+                    true);
+                DoubleBuffered = true;
+                AutoSize = false;
+                UseMnemonic = false;
+                TextAlign = ContentAlignment.MiddleCenter;
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+                using (var bg = new SolidBrush(BackColor))
+                {
+                    g.FillRectangle(bg, ClientRectangle);
+                }
+
+                if (Width < 8 || Height < 8) return;
+                var rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+                float r = rect.Height / 2f;
+                using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, r);
+                if (PillFillColor.A > 0)
+                {
+                    using var fill = new SolidBrush(PillFillColor);
+                    g.FillPath(fill, path);
+                }
+                if (PillBorderColor.A > 0)
+                {
+                    using var border = new Pen(PillBorderColor, 1f);
+                    g.DrawPath(border, path);
+                }
+
+                TextRenderer.DrawText(
+                    g,
+                    Text ?? "",
+                    Font,
+                    ClientRectangle,
+                    ForeColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
             }
         }
 
@@ -236,7 +376,7 @@ namespace PocketLog.Client
 
             Panel page = CreateResponsiveScrollPage(out Panel col);
             int w = col.Width;
-            int y = 12;
+            int y = 10;
 
             var unpaidList = taggedDebts.Where(d => !d.IsConfirmedPaid).ToList();
             int totalIOwe = unpaidList.Where(d => d.DebtorId == currentUserId).Sum(d => d.MyShare);
@@ -246,18 +386,20 @@ namespace PocketLog.Client
                                          ?? unpaidList.FirstOrDefault()
                                          ?? taggedDebts.FirstOrDefault();
 
-            // Thẻ tổng quan công nợ Gradient chéo 88px (WalletGradStart -> WalletGradEnd)
+            var stackRelayoutActions = new List<(Control Ctrl, int GapAfter, Action<int> OnLayout)>();
+
+            // Thẻ tổng quan công nợ Gradient chéo 88px (WalletGradStart -> WalletGradEnd) với bóng đổ & glass sheen
             var pnlBanner = new WalletGradientPanel(this)
             {
                 Location = new Point(0, y),
                 Size = new Size(w, 88),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
                 BorderRadius = 24,
                 FillColor = theme.WalletGradStart,
                 FillColor2 = theme.WalletGradEnd,
                 GradientMode = LinearGradientMode.ForwardDiagonal,
-                BackColor = Color.Transparent,
-                UseTransparentBackground = true,
+                BackColor = clrAppBg,
+                UseTransparentBackground = false,
                 UnpaidCount = unpaidList.Count,
                 UnpaidDotColor = theme.Danger,
                 Cursor = Cursors.Default
@@ -268,33 +410,37 @@ namespace PocketLog.Client
             Color oweValueColor = totalIOwe > 0 ? Color.FromArgb(254, 205, 211) : Color.White;
             Color owedValueColor = totalOwedToMe > 0 ? Color.FromArgb(167, 243, 208) : Color.White;
 
-            var lblOweTitle = MakeLabel("Bạn đang nợ", 18, 15, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
-            var lblOweVal = MakeLabel($"{totalIOwe:N0}đ", 18, 41, 12.2F, FontStyle.Bold, oweValueColor, 150);
+            var lblOweTitle = MakeLabel("Bạn đang nợ", 20, 12, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
+            var lblOweVal = MakeLabel($"{totalIOwe:N0}đ", 20, 38, 12.2F, FontStyle.Bold, oweValueColor, 150);
             SetControlFont(lblOweVal, FontBold(12.2F));
             lblOweVal.Height = TextRenderer.MeasureText("Ág", lblOweVal.Font).Height + 4;
 
-            var lblOwedTitle = MakeLabel("Bạn bè nợ bạn", 200, 15, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
-            var lblOwedVal = MakeLabel($"{totalOwedToMe:N0}đ", 200, 41, 12.2F, FontStyle.Bold, owedValueColor, 150);
+            var lblOwedTitle = MakeLabel("Bạn bè nợ bạn", 200, 12, 8.2F, FontStyle.Regular, bannerTitleColor, 150);
+            var lblOwedVal = MakeLabel($"{totalOwedToMe:N0}đ", 200, 38, 12.2F, FontStyle.Bold, owedValueColor, 150);
             SetControlFont(lblOwedVal, FontBold(12.2F));
             lblOwedVal.Height = TextRenderer.MeasureText("Ág", lblOwedVal.Font).Height + 4;
 
             void LayoutBanner()
             {
                 if (pnlBanner.IsDisposed) return;
-                int bw = pnlBanner.Width;
-                if (bw <= 120) return;
+                Rectangle inner = pnlBanner.InnerWalletBounds;
+                if (inner.Width <= 120) return;
 
-                double splitRatio = bw < 450 ? 0.415 : 0.465;
-                int minDiv = Math.Min(120, bw / 2);
-                int maxDiv = Math.Max(minDiv, bw - 120);
-                int divX = Math.Clamp((int)Math.Round(bw * splitRatio), minDiv, maxDiv);
-                int leftW = Math.Max(64, divX - 28);
+                double splitRatio = pnlBanner.Width < 450 ? 0.415 : 0.465;
+                int minDiv = inner.Left + Math.Min(116, inner.Width / 2);
+                int maxDiv = Math.Max(minDiv, inner.Right - 116);
+                int divX = Math.Clamp(inner.Left + (int)Math.Round(inner.Width * splitRatio), minDiv, maxDiv);
+
+                int leftX = inner.Left + 16;
+                int leftW = Math.Max(64, divX - leftX - 10);
                 int rightX = divX + 12;
-                int rightMaxW = Math.Max(64, bw - rightX - 14);
+                int rightMaxW = Math.Max(64, inner.Right - rightX - 14);
+                int titleY = inner.Top + 10;
+                int valY = inner.Top + 36;
 
-                lblOweTitle.Location = new Point(18, 15);
+                lblOweTitle.Location = new Point(leftX, titleY);
                 lblOweTitle.Width = leftW;
-                lblOweVal.Location = new Point(18, 41);
+                lblOweVal.Location = new Point(leftX, valY);
                 lblOweVal.Width = leftW;
 
                 Rectangle pillBounds = Rectangle.Empty;
@@ -325,13 +471,13 @@ namespace PocketLog.Client
                         chosenPillW = Math.Min(compactPillW, Math.Max(44, availPillW));
                     }
 
-                    pillBounds = new Rectangle(bw - 14 - chosenPillW, 12, chosenPillW, 22);
+                    pillBounds = new Rectangle(inner.Right - 14 - chosenPillW, inner.Top + 9, chosenPillW, 22);
                     owedTitleWidth = Math.Max(68, pillBounds.Left - rightX - 4);
                 }
 
-                lblOwedTitle.Location = new Point(rightX, 15);
+                lblOwedTitle.Location = new Point(rightX, titleY);
                 lblOwedTitle.Width = owedTitleWidth;
-                lblOwedVal.Location = new Point(rightX, 41);
+                lblOwedVal.Location = new Point(rightX, valY);
                 lblOwedVal.Width = rightMaxW;
 
                 pnlBanner.UpdateBadgeLayout(divX, pillBounds, badgeLabel);
@@ -361,37 +507,40 @@ namespace PocketLog.Client
             }
             LayoutBanner();
             col.Controls.Add(pnlBanner);
-            y += 102;
+            stackRelayoutActions.Add((pnlBanner, 10, curW =>
+            {
+                pnlBanner.Width = curW;
+                LayoutBanner();
+            }));
+            y += pnlBanner.Height + 10;
 
             if (currentDebt != null)
             {
-                Guna2Panel cardActiveDebt = new Guna2Panel
+                var cardActiveDebt = new ElevatedCardPanel(this)
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 268),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    BorderRadius = 22,
-                    FillColor = clrCardBg,
-                    BorderColor = clrBorderLight,
-                    BorderThickness = 1,
-                    UseTransparentBackground = true
+                    Size = new Size(w, 276),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                    CornerRadius = 22,
+                    CardFillColor = clrCardBg,
+                    CardBorderColor = clrBorderLight,
+                    CardBorderThickness = 1,
+                    ElevationLevel = 2,
+                    BackColor = clrAppBg
                 };
-                AttachEdgeResizeRedirector(cardActiveDebt);
 
                 bool isDebtor = (currentDebt.DebtorId == currentUserId);
                 string roleDesc = isDebtor
                     ? $"Bạn nợ {currentDebt.CreditorName}"
                     : $"{currentDebt.DebtorName} nợ bạn";
 
-                var lblDebtTitle = MakeLabel($"Khoản chia: {currentDebt.Title}", 16, 12, 10.2F, FontStyle.Bold, clrTextMain, w - 32);
-                lblDebtTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
+                Rectangle dInner = cardActiveDebt.InnerCardBounds;
+                var lblDebtTitle = MakeLabel($"Khoản chia: {currentDebt.Title}", dInner.Left + 16, dInner.Top + 12, 10.2F, FontStyle.Bold, clrTextMain, Math.Max(100, dInner.Width - 32));
                 var lblDebtRole = MakeLabel(
                     $"{roleDesc}  •  Phần chia: {currentDebt.MyShare:N0}đ",
-                    16, 40, 9.2F, FontStyle.Bold,
+                    dInner.Left + 16, dInner.Top + 40, 9.2F, FontStyle.Bold,
                     isDebtor ? clrRedDanger : positiveColor,
-                    w - 32);
-                lblDebtRole.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                    Math.Max(100, dInner.Width - 32));
 
                 string stateTxt = currentDebt.IsConfirmedPaid ? "Đã hoàn thành" : (currentDebt.IsSentProof ? "Chờ xác nhận" : "Chưa thanh toán");
                 Color stateBg = currentDebt.IsConfirmedPaid
@@ -405,21 +554,20 @@ namespace PocketLog.Client
                     : (currentDebt.IsSentProof ? clrSoftGreenBorder : (isDarkMode ? Color.FromArgb(136, 19, 55) : Color.FromArgb(254, 205, 211)));
 
                 int stateBadgeW = Math.Max(148, MeasurePillBtnWidth(stateTxt, 8.2F, 15));
-                var badgeState = MakeBtn(stateTxt, 16, 68, stateBadgeW, 30, 15, stateBg, stateFore, stateBorder, 1, 8.2F);
+                var badgeState = MakeBtn(stateTxt, dInner.Left + 16, dInner.Top + 68, stateBadgeW, 30, 15, stateBg, stateFore, stateBorder, 1, 8.2F);
                 badgeState.Cursor = Cursors.Default;
                 badgeState.TabStop = false;
                 badgeState.HoverState.FillColor = stateBg;
                 badgeState.HoverState.BorderColor = stateBorder;
 
                 int noteLeft = badgeState.Right + 10;
-                Label lblNote = MakeLabel(currentDebt.StatusNote, noteLeft, 72, 8.2F, FontStyle.Regular, clrTextMuted, Math.Max(80, w - noteLeft - 16));
-                lblNote.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                Label lblNote = MakeLabel(currentDebt.StatusNote, noteLeft, dInner.Top + 72, 8.2F, FontStyle.Regular, clrTextMuted, Math.Max(70, dInner.Right - noteLeft - 16));
 
                 cardActiveDebt.Controls.AddRange(new Control[] { lblDebtTitle, lblDebtRole, badgeState, lblNote });
 
                 Guna2Panel pnlBillImg = new Guna2Panel
                 {
-                    Location = new Point(16, 108),
+                    Location = new Point(dInner.Left + 16, dInner.Top + 108),
                     Size = new Size(132, 144),
                     BorderRadius = 14,
                     FillColor = clrInputBg,
@@ -463,7 +611,7 @@ namespace PocketLog.Client
                 pnlBillImg.Controls.Add(picProof);
                 cardActiveDebt.Controls.Add(pnlBillImg);
 
-                var btnUploadProof = MakeBtn("Gửi ảnh bill CK", 160, 108, Math.Max(140, w - 176), 66, 16, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.5F);
+                var btnUploadProof = MakeBtn("Gửi ảnh bill CK", dInner.Left + 160, dInner.Top + 108, Math.Max(140, dInner.Width - 176), 66, 16, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.5F);
                 btnUploadProof.HoverState.FillColor = clrCardBg;
                 btnUploadProof.HoverState.ForeColor = softTextInk;
                 btnUploadProof.HoverState.BorderColor = clrPrimaryGreen;
@@ -472,8 +620,8 @@ namespace PocketLog.Client
                 var btnFriendVerify = new Guna2GradientButton
                 {
                     Text = "Xác nhận hoàn thành",
-                    Location = new Point(160, 186),
-                    Size = new Size(Math.Max(140, w - 176), 66),
+                    Location = new Point(dInner.Left + 160, dInner.Top + 186),
+                    Size = new Size(Math.Max(140, dInner.Width - 176), 66),
                     BorderRadius = 16,
                     FillColor = theme.AccentPrimary,
                     FillColor2 = theme.AccentSecondary,
@@ -539,25 +687,29 @@ namespace PocketLog.Client
                 void LayoutActiveDebtCard()
                 {
                     if (cardActiveDebt.IsDisposed) return;
-                    int cw = cardActiveDebt.Width;
-                    if (cw < 180) return;
+                    Rectangle inner = cardActiveDebt.InnerCardBounds;
+                    if (inner.Width < 180) return;
 
-                    lblDebtTitle.Width = Math.Max(100, cw - 32);
-                    lblDebtRole.Width = Math.Max(100, cw - 32);
+                    lblDebtTitle.Location = new Point(inner.Left + 16, inner.Top + 12);
+                    lblDebtTitle.Width = Math.Max(100, inner.Width - 32);
 
+                    lblDebtRole.Location = new Point(inner.Left + 16, inner.Top + 40);
+                    lblDebtRole.Width = Math.Max(100, inner.Width - 32);
+
+                    badgeState.Location = new Point(inner.Left + 16, inner.Top + 68);
                     int nLeft = badgeState.Right + 10;
-                    lblNote.Left = nLeft;
-                    lblNote.Width = Math.Max(70, cw - nLeft - 16);
+                    lblNote.Location = new Point(nLeft, inner.Top + 72);
+                    lblNote.Width = Math.Max(70, inner.Right - nLeft - 16);
 
-                    int imgW = cw < 440 ? 124 : 148;
-                    pnlBillImg.SetBounds(16, 108, imgW, 144);
+                    int imgW = inner.Width < 432 ? 120 : 148;
+                    pnlBillImg.SetBounds(inner.Left + 16, inner.Top + 108, imgW, 144);
                     emptyProofBadge.Left = (imgW - emptyProofBadge.Width) / 2;
                     lblEmptyProof.Size = new Size(Math.Max(60, imgW - 12), 56);
 
                     int rightX = pnlBillImg.Right + 12;
-                    int rightW = Math.Max(120, cw - rightX - 16);
-                    btnUploadProof.SetBounds(rightX, 108, rightW, 66);
-                    btnFriendVerify.SetBounds(rightX, 186, rightW, 66);
+                    int rightW = Math.Max(120, inner.Right - rightX - 16);
+                    btnUploadProof.SetBounds(rightX, inner.Top + 108, rightW, 66);
+                    btnFriendVerify.SetBounds(rightX, inner.Top + 186, rightW, 66);
 
                     btnUploadProof.Text = (uploadFullText == uploadShortText || MeasurePillBtnWidth(uploadFullText, 8.5F, 16, true, 15) <= rightW)
                         ? uploadFullText
@@ -606,38 +758,58 @@ namespace PocketLog.Client
                 cardActiveDebt.Controls.Add(btnUploadProof);
                 cardActiveDebt.Controls.Add(btnFriendVerify);
                 col.Controls.Add(cardActiveDebt);
-                y += 282;
+                stackRelayoutActions.Add((cardActiveDebt, 10, curW =>
+                {
+                    cardActiveDebt.Width = curW;
+                    LayoutActiveDebtCard();
+                }));
+                y += cardActiveDebt.Height + 10;
             }
             else
             {
-                Guna2Panel compactEmpty = new Guna2Panel
+                var compactEmpty = new ElevatedCardPanel(this)
                 {
                     Location = new Point(0, y),
-                    Size = new Size(w, 96),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    BorderRadius = 20,
-                    FillColor = clrCardBg,
-                    BorderColor = clrBorderLight,
-                    BorderThickness = 1,
-                    UseTransparentBackground = true
+                    Size = new Size(w, 104),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                    CornerRadius = 20,
+                    CardFillColor = clrCardBg,
+                    CardBorderColor = clrBorderLight,
+                    CardBorderThickness = 1,
+                    ElevationLevel = 2,
+                    BackColor = clrAppBg
                 };
-                AttachEdgeResizeRedirector(compactEmpty);
-                compactEmpty.Controls.Add(MakeSoftIconBadge(UiIcon.Receipt, 16, 25, 44, 14, clrSoftGreenBg, accentText));
-                var lEmpty1 = MakeLabel("Chưa có khoản chia tiền nào được gắn tag", 72, 16, 8.4F, FontStyle.Bold, clrTextMain, w - 88);
-                lEmpty1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                var lEmpty2 = MakeLabel("Gắn tag bạn bè lúc đăng ảnh chi tiêu để tự động chia hóa đơn", 72, lEmpty1.Bottom + 4, 8.2F, FontStyle.Regular, clrTextMuted, w - 88, lines: 2);
-                lEmpty2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                compactEmpty.Height = Math.Max(96, lEmpty2.Bottom + 14);
-                compactEmpty.Controls.Add(lEmpty1);
-                compactEmpty.Controls.Add(lEmpty2);
+                Rectangle eInner = compactEmpty.InnerCardBounds;
+                var emptyIcon = MakeSoftIconBadge(UiIcon.Receipt, eInner.Left + 14, eInner.Top + 24, 42, 13, clrSoftGreenBg, accentText);
+                var lEmpty1 = MakeLabel("Chưa có khoản chia tiền nào được gắn tag", eInner.Left + 66, eInner.Top + 16, 8.4F, FontStyle.Bold, clrTextMain, Math.Max(120, eInner.Width - 78));
+                var lEmpty2 = MakeLabel("Gắn tag bạn bè lúc đăng ảnh chi tiêu để tự động chia hóa đơn", eInner.Left + 66, lEmpty1.Bottom + 4, 8.2F, FontStyle.Regular, clrTextMuted, Math.Max(120, eInner.Width - 78), lines: 2);
+                compactEmpty.Controls.AddRange(new Control[] { emptyIcon, lEmpty1, lEmpty2 });
+
+                void LayoutCompactEmpty()
+                {
+                    if (compactEmpty.IsDisposed) return;
+                    Rectangle inner = compactEmpty.InnerCardBounds;
+                    int txtW = Math.Max(120, inner.Width - 78);
+                    emptyIcon.Location = new Point(inner.Left + 14, inner.Top + 24);
+                    lEmpty1.SetBounds(inner.Left + 66, inner.Top + 16, txtW, lEmpty1.Height);
+                    lEmpty2.SetBounds(inner.Left + 66, lEmpty1.Bottom + 4, txtW, lEmpty2.Height);
+                    compactEmpty.Height = Math.Max(104, lEmpty2.Bottom + 14 + 6);
+                }
+
+                LayoutCompactEmpty();
                 col.Controls.Add(compactEmpty);
-                y += compactEmpty.Height + 12;
+                stackRelayoutActions.Add((compactEmpty, 10, curW =>
+                {
+                    compactEmpty.Width = curW;
+                    LayoutCompactEmpty();
+                }));
+                y += compactEmpty.Height + 10;
             }
 
             var btnToggleUnpaid = MakeBtn(
                 $"Các khoản chi gắn tag chưa tất toán ({unpaidList.Count})",
-                0, y, w, 46, 16, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.2F);
-            btnToggleUnpaid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                4, y, Math.Max(180, w - 8), 46, 16, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.2F);
+            btnToggleUnpaid.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             btnToggleUnpaid.HoverState.FillColor = clrCardBg;
             btnToggleUnpaid.HoverState.BorderColor = clrPrimaryGreen;
             AttachBtnIcon(btnToggleUnpaid, isUnpaidDropdownOpen ? UiIcon.ChevronUp : UiIcon.ChevronDown, accentText, 15);
@@ -650,7 +822,12 @@ namespace PocketLog.Client
                 RefreshPaneContent("EXPENSE");
             };
             col.Controls.Add(btnToggleUnpaid);
-            y += 54;
+            stackRelayoutActions.Add((btnToggleUnpaid, 10, curW =>
+            {
+                btnToggleUnpaid.Left = 4;
+                btnToggleUnpaid.Width = Math.Max(180, curW - 8);
+            }));
+            y += 56;
 
             if (isUnpaidDropdownOpen)
             {
@@ -658,26 +835,33 @@ namespace PocketLog.Client
                 {
                     Color paidBg = isDarkMode ? Color.FromArgb(16, 62, 46) : clrSoftGreenBg;
                     Color paidBorder = isDarkMode ? Color.FromArgb(32, 110, 82) : clrSoftGreenBorder;
-                    Guna2Panel emptyBox = new Guna2Panel
+                    var emptyBox = new ElevatedCardPanel(this)
                     {
                         Location = new Point(0, y),
-                        Size = new Size(w, 58),
-                        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                        BorderRadius = 16,
-                        FillColor = clrCardBg,
-                        BorderColor = paidBorder,
-                        BorderThickness = 1,
-                        UseTransparentBackground = true
+                        Size = new Size(w, 66),
+                        Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                        CornerRadius = 16,
+                        CardFillColor = clrCardBg,
+                        CardBorderColor = paidBorder,
+                        CardBorderThickness = 1,
+                        ElevationLevel = 1,
+                        BackColor = clrAppBg
                     };
-                    AttachEdgeResizeRedirector(emptyBox);
-                    emptyBox.Controls.Add(MakeSoftIconBadge(UiIcon.Check, 14, 14, 30, 10, paidBg, positiveColor));
-                    var lblAllPaid = MakeLabel("Tất cả các khoản chia tiền đều đã tất toán xong!", 54, 10, 8.4F, FontStyle.Bold, positiveColor, w - 70, lines: 2);
+                    Rectangle ebInner = emptyBox.InnerCardBounds;
+                    var paidBadge = MakeSoftIconBadge(UiIcon.Check, ebInner.Left + 14, ebInner.Top + 14, 30, 10, paidBg, positiveColor);
+                    var lblAllPaid = MakeLabel("Tất cả các khoản chia tiền đều đã tất toán xong!", ebInner.Left + 54, ebInner.Top + 10, 8.4F, FontStyle.Bold, positiveColor, Math.Max(120, ebInner.Width - 70), lines: 2);
                     lblAllPaid.TextAlign = ContentAlignment.MiddleLeft;
-                    lblAllPaid.Height = emptyBox.Height - 20;
-                    lblAllPaid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                    emptyBox.Controls.Add(lblAllPaid);
+                    lblAllPaid.Height = Math.Max(34, ebInner.Height - 20);
+                    emptyBox.Controls.AddRange(new Control[] { paidBadge, lblAllPaid });
                     col.Controls.Add(emptyBox);
-                    y += 66;
+                    stackRelayoutActions.Add((emptyBox, 10, curW =>
+                    {
+                        emptyBox.Width = curW;
+                        Rectangle inner = emptyBox.InnerCardBounds;
+                        paidBadge.Location = new Point(inner.Left + 14, inner.Top + 14);
+                        lblAllPaid.SetBounds(inner.Left + 54, inner.Top + 10, Math.Max(120, inner.Width - 70), Math.Max(34, inner.Height - 20));
+                    }));
+                    y += emptyBox.Height + 10;
                 }
                 else
                 {
@@ -691,36 +875,33 @@ namespace PocketLog.Client
                         bool rowIsDebtor = (debt.DebtorId == currentUserId);
                         string roleTag = rowIsDebtor ? $"Bạn nợ {debt.CreditorName}" : $"{debt.DebtorName} nợ bạn";
 
-                        Guna2Panel itemRow = new Guna2Panel
+                        var itemRow = new ElevatedCardPanel(this)
                         {
                             Location = new Point(0, y),
-                            Size = new Size(w, 94),
-                            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                            BorderRadius = 18,
-                            FillColor = isSelected ? clrSoftGreenBg : clrCardBg,
-                            BorderColor = isSelected ? clrPrimaryGreen : clrBorderLight,
-                            BorderThickness = 1,
-                            UseTransparentBackground = true
+                            Size = new Size(w, 102),
+                            Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                            CornerRadius = 18,
+                            CardFillColor = isSelected ? clrSoftGreenBg : clrCardBg,
+                            CardBorderColor = isSelected ? clrPrimaryGreen : clrBorderLight,
+                            CardBorderThickness = 1,
+                            ElevationLevel = 1,
+                            BackColor = clrAppBg
                         };
-                        AttachEdgeResizeRedirector(itemRow);
 
-                        int textMaxW = Math.Max(96, w - selBtnW - 36);
-                        var r1 = MakeLabel($"{GetCategoryShortClean(debt.Category)}  •  {debt.Title}", 16, 10, 9.2F, FontStyle.Bold, clrTextMain, textMaxW);
-                        r1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                        var r2 = MakeLabel($"{roleTag}  •  {debt.MyShare:N0}đ", 16, 37, 8.8F, FontStyle.Bold, rowIsDebtor ? clrRedDanger : positiveColor, textMaxW);
-                        r2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-                        var r3 = MakeLabel($"{debt.Time}  •  {(debt.IsSentProof ? "Đã gửi bill" : "Chưa gửi bill")}", 16, 64, 8.2F, FontStyle.Regular, clrTextMuted, textMaxW);
-                        r3.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                        Rectangle rInner = itemRow.InnerCardBounds;
+                        int textMaxW = Math.Max(96, rInner.Width - selBtnW - 36);
+                        var r1 = MakeLabel($"{GetCategoryShortClean(debt.Category)}  •  {debt.Title}", rInner.Left + 16, rInner.Top + 10, 9.2F, FontStyle.Bold, clrTextMain, textMaxW);
+                        var r2 = MakeLabel($"{roleTag}  •  {debt.MyShare:N0}đ", rInner.Left + 16, rInner.Top + 37, 8.8F, FontStyle.Bold, rowIsDebtor ? clrRedDanger : positiveColor, textMaxW);
+                        var r3 = MakeLabel($"{debt.Time}  •  {(debt.IsSentProof ? "Đã gửi bill" : "Chưa gửi bill")}", rInner.Left + 16, rInner.Top + 64, 8.2F, FontStyle.Regular, clrTextMuted, textMaxW);
 
                         var btnSelectDebt = MakeBtn(
                             isSelected ? "Đang chọn" : (rowIsDebtor ? "Trả ngay" : "Kiểm tra"),
-                            w - selBtnW - 14, 27, selBtnW, 40, 20,
+                            rInner.Right - selBtnW - 14, rInner.Top + 27, selBtnW, 40, 20,
                             isSelected ? clrPrimaryGreen : clrInputBg,
                             isSelected ? Color.White : (isDarkMode ? clrTextMain : clrIndigo),
                             isSelected ? clrPrimaryGreen : clrBorderLight, 1, 8.4F);
                         btnSelectDebt.HoverState.FillColor = isSelected ? clrPrimaryGreen : clrSoftGreenBg;
                         btnSelectDebt.HoverState.BorderColor = clrPrimaryGreen;
-                        btnSelectDebt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
 
                         btnSelectDebt.Click += (s, e) =>
                         {
@@ -728,145 +909,70 @@ namespace PocketLog.Client
                             RefreshPaneContent("EXPENSE");
                         };
 
+                        void LayoutUnpaidRow()
+                        {
+                            if (itemRow.IsDisposed) return;
+                            Rectangle inner = itemRow.InnerCardBounds;
+                            int txtW = Math.Max(96, inner.Width - selBtnW - 36);
+                            r1.SetBounds(inner.Left + 16, inner.Top + 10, txtW, r1.Height);
+                            r2.SetBounds(inner.Left + 16, inner.Top + 37, txtW, r2.Height);
+                            r3.SetBounds(inner.Left + 16, inner.Top + 64, txtW, r3.Height);
+                            btnSelectDebt.SetBounds(inner.Right - selBtnW - 14, inner.Top + 27, selBtnW, 40);
+                        }
+
                         itemRow.Controls.AddRange(new Control[] { r1, r2, r3, btnSelectDebt });
+                        LayoutUnpaidRow();
                         col.Controls.Add(itemRow);
-                        y += 102;
+                        stackRelayoutActions.Add((itemRow, 8, curW =>
+                        {
+                            itemRow.Width = curW;
+                            LayoutUnpaidRow();
+                        }));
+                        y += itemRow.Height + 8;
                     }
                 }
             }
 
-            y += 8;
-            var lblSecCat = MakeLabel("Chi tiêu thực tế theo danh mục", 2, y, 11F, FontStyle.Bold, clrTextMain, w - 8);
-            SetControlFont(lblSecCat, FontBold(11F));
-            lblSecCat.Height = TextRenderer.MeasureText("Ág", lblSecCat.Font).Height + 4;
-            lblSecCat.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            col.Controls.Add(lblSecCat);
-            y += 36;
-
-            int limBtnW = Math.Max(126, MeasurePillBtnWidth("Lưu hạn mức", 8.3F, 12));
-
+            // --- Monthly Budget Overview Card (BudgetDonutCard + Total Budget Editor) ABOVE Category List ---
+            int grandTotal = CalculateTotalPersonalSpent();
+            bool isTotalOver = totalBudgetLimit > 0 && grandTotal > totalBudgetLimit;
+            var donutSlices = new List<BudgetSlice>(standardCategories.Length);
             foreach (var cat in standardCategories)
             {
-                string catName = cat.Key;
-                int spent = CalculatePersonalSpentByCategory(catName);
-                int limit = categoryBudgets.ContainsKey(catName) ? categoryBudgets[catName] : 500000;
-                bool isOver = spent > limit;
-
-                Guna2Panel catCard = new Guna2Panel
-                {
-                    Location = new Point(0, y),
-                    Size = new Size(w, 106),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    BorderRadius = 18,
-                    FillColor = clrCardBg,
-                    BorderColor = clrBorderLight,
-                    BorderThickness = 1,
-                    UseTransparentBackground = true
-                };
-                AttachEdgeResizeRedirector(catCard);
-
-                var iconBadge = MakeSoftIconBadge(
-                    GetCategoryIcon(catName), 14, 15, 40, 13,
-                    isOver ? clrSoftRedBg : clrSoftGreenBg,
-                    isOver ? clrRedDanger : accentText);
-                catCard.Controls.Add(iconBadge);
-
-                int leftColW = Math.Max(90, w - 64 - limBtnW - 24);
-                var lblCatName = MakeLabel(GetCategoryCleanName(catName), 64, 12, 9.8F, FontStyle.Bold, clrTextMain, leftColW);
-                lblCatName.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-                var lblSpent = MakeLabel($"Đã tiêu: {spent:N0}đ / {limit:N0}đ", 64, 39, 8.2F, FontStyle.Bold, isOver ? clrRedDanger : accentText, leftColW);
-                lblSpent.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-                int pct = limit > 0 ? Math.Min(100, (int)((long)spent * 100 / limit)) : 100;
-                Guna2ProgressBar prg = new Guna2ProgressBar
-                {
-                    Location = new Point(14, 78),
-                    Size = new Size(Math.Max(80, w - limBtnW - 40), 12),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    BorderRadius = 6,
-                    Value = pct,
-                    FillColor = clrAppBg,
-                    ProgressColor = isOver ? clrRedDanger : theme.AccentPrimary,
-                    ProgressColor2 = isOver ? Color.OrangeRed : theme.AccentSecondary,
-                    UseTransparentBackground = true
-                };
-
-                var txtLim = MakeTextBox(limit.ToString("N0"), "Hạn mức", w - limBtnW - 14, 14, limBtnW, 36, clrCardBg, true);
-                txtLim.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-                txtLim.TextAlign = HorizontalAlignment.Right;
-
-                var btnSetLim = MakeBtn("Lưu hạn mức", w - limBtnW - 14, 56, limBtnW, 36, 12, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.3F);
-                btnSetLim.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-                btnSetLim.HoverState.FillColor = clrPrimaryGreen;
-                btnSetLim.HoverState.ForeColor = Color.White;
-                btnSetLim.HoverState.BorderColor = clrPrimaryGreen;
-                btnSetLim.Click += async (s, e) =>
-                {
-                    if (int.TryParse(txtLim.Text.Replace(".", "").Replace(",", "").Trim(), out int nLim) && nLim > 0)
-                    {
-                        categoryBudgets[catName] = nLim;
-                        await SendPacketSafeAsync(TcpPacket.Create(PacketType.UPDATE_CATEGORY_BUDGET_REQ, new UpdateCategoryBudgetRequestDto
-                        {
-                            UserId = currentUserId,
-                            Category = catName,
-                            NewLimit = nLim
-                        }));
-                        RefreshPaneContent("EXPENSE");
-                    }
-                };
-
-                catCard.Controls.AddRange(new Control[] { lblCatName, lblSpent, prg, txtLim, btnSetLim });
-                col.Controls.Add(catCard);
-                y += 116;
+                int cSpent = CalculatePersonalSpentByCategory(cat.Key);
+                donutSlices.Add(new BudgetSlice(cat.ShortLabel, cSpent, GetCategoryAccentColor(cat.Key)));
             }
 
-            int grandTotal = CalculateTotalPersonalSpent();
-            bool isTotalOver = grandTotal > totalBudgetLimit;
-
-            Guna2Panel cardTotal = new Guna2Panel
+            Color overCardBorder = isDarkMode ? Color.FromArgb(136, 19, 55) : Color.FromArgb(254, 205, 211);
+            var cardBudgetOverview = new ElevatedCardPanel(this)
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 162),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 22,
-                FillColor = clrSoftGreenBg,
-                BorderColor = clrSoftGreenBorder,
-                BorderThickness = 1,
-                UseTransparentBackground = true
+                Size = new Size(w, 260),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                CornerRadius = 22,
+                CardFillColor = clrCardBg,
+                CardBorderColor = isTotalOver ? overCardBorder : clrBorderLight,
+                CardBorderThickness = 1,
+                ElevationLevel = 2,
+                BackColor = clrAppBg
             };
-            AttachEdgeResizeRedirector(cardTotal);
 
-            var lblTotalHeader = MakeLabel("TỔNG CHI TIÊU CÁ NHÂN TRONG THÁNG", 18, 12, 9.2F, FontStyle.Bold, accentText, w - 36);
-            lblTotalHeader.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            cardTotal.Controls.Add(lblTotalHeader);
-
-            var lblGrand = MakeLabel($"{grandTotal:N0}đ   /   Hạn mức: {totalBudgetLimit:N0}đ", 18, 38, 11F, FontStyle.Bold, isTotalOver ? clrRedDanger : clrTextMain, w - 36);
-            SetControlFont(lblGrand, FontBold(11F));
-            lblGrand.Height = TextRenderer.MeasureText("Ág", lblGrand.Font).Height + 4;
-            lblGrand.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            cardTotal.Controls.Add(lblGrand);
-
-            int totalPct = totalBudgetLimit > 0 ? Math.Min(100, (int)((long)grandTotal * 100 / totalBudgetLimit)) : 100;
-            Guna2ProgressBar prgTotal = new Guna2ProgressBar
+            var donutCard = new BudgetDonutCard(this)
             {
-                Location = new Point(18, 72),
-                Size = new Size(w - 36, 14),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 7,
-                Value = totalPct,
-                FillColor = theme.CardBg,
-                ProgressColor = isTotalOver ? clrRedDanger : theme.AccentPrimary,
-                ProgressColor2 = isTotalOver ? Color.OrangeRed : theme.AccentSecondary,
-                UseTransparentBackground = true
+                BackColor = clrCardBg
+            };
+            donutCard.SetData(grandTotal, totalBudgetLimit, donutSlices);
+
+            var dividerBudget = new Panel
+            {
+                Height = 1,
+                BackColor = clrBorderLight
             };
 
             int saveTotalBtnW = Math.Max(158, MeasurePillBtnWidth("Lưu tổng hạn mức", 8.5F, 14));
             var totalActionGrid = new BufferedTableLayout
             {
-                Location = new Point(16, 98),
-                Size = new Size(w - 32, 46),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Size = new Size(Math.Max(220, w - 32), 46),
                 ColumnCount = 2,
                 RowCount = 1
             };
@@ -874,18 +980,18 @@ namespace PocketLog.Client
             totalActionGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, saveTotalBtnW));
             totalActionGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            var txtTotalIn = MakeTextBox(totalBudgetLimit.ToString("N0"), "Tổng hạn mức", 0, 0, 140, 42, clrSoftGreenBg, true);
+            var txtTotalIn = MakeTextBox(totalBudgetLimit.ToString("N0"), "Tổng hạn mức", 0, 0, 140, 42, clrCardBg, true);
             txtTotalIn.Dock = DockStyle.Fill;
             txtTotalIn.FillColor = theme.InputBg;
             txtTotalIn.FocusedState.FillColor = theme.CardBg;
             txtTotalIn.BorderColor = clrSoftGreenBorder;
-            txtTotalIn.Margin = new Padding(2, 1, 6, 1);
+            txtTotalIn.Margin = new Padding(0, 1, 8, 1);
 
             var btnSetTotal = new Guna2GradientButton
             {
                 Text = "Lưu tổng hạn mức",
                 Dock = DockStyle.Fill,
-                Margin = new Padding(2, 1, 2, 1),
+                Margin = new Padding(0, 1, 0, 1),
                 BorderRadius = 14,
                 FillColor = theme.AccentPrimary,
                 FillColor2 = theme.AccentSecondary,
@@ -918,21 +1024,201 @@ namespace PocketLog.Client
             totalActionGrid.Controls.Add(txtTotalIn, 0, 0);
             totalActionGrid.Controls.Add(btnSetTotal, 1, 0);
 
-            cardTotal.Controls.Add(prgTotal);
-            cardTotal.Controls.Add(totalActionGrid);
-            col.Controls.Add(cardTotal);
-            y += 176;
+            cardBudgetOverview.Controls.AddRange(new Control[] { donutCard, dividerBudget, totalActionGrid });
 
-            var btnExportCsv = MakeBtn("Xuất báo cáo chi tiêu (.CSV / Excel)", 0, y, w, 48, 16, clrCardBg, softTextInk, clrSoftGreenBorder, 1, 8.8F);
-            btnExportCsv.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            void LayoutBudgetOverviewCard()
+            {
+                if (cardBudgetOverview.IsDisposed) return;
+                Rectangle inner = cardBudgetOverview.InnerCardBounds;
+                int contentW = Math.Max(220, inner.Width - 24);
+                int donutH = donutCard.GetRequiredHeight(contentW);
+
+                donutCard.SetBounds(inner.Left + 12, inner.Top + 12, contentW, donutH);
+                dividerBudget.SetBounds(inner.Left + 14, donutCard.Bottom + 8, Math.Max(100, inner.Width - 28), 1);
+                totalActionGrid.SetBounds(inner.Left + 12, dividerBudget.Bottom + 10, contentW, 46);
+
+                int targetH = totalActionGrid.Bottom + 12 + 6;
+                if (cardBudgetOverview.Height != targetH)
+                {
+                    cardBudgetOverview.Height = targetH;
+                }
+            }
+
+            LayoutBudgetOverviewCard();
+            col.Controls.Add(cardBudgetOverview);
+            stackRelayoutActions.Add((cardBudgetOverview, 14, curW =>
+            {
+                cardBudgetOverview.Width = curW;
+                LayoutBudgetOverviewCard();
+            }));
+            y += cardBudgetOverview.Height + 14;
+
+            var lblSecCat = MakeLabel("Chi tiêu thực tế theo danh mục", 6, y, 11F, FontStyle.Bold, clrTextMain, Math.Max(160, w - 12));
+            SetControlFont(lblSecCat, FontBold(11F));
+            lblSecCat.Height = TextRenderer.MeasureText("Ág", lblSecCat.Font).Height + 4;
+            lblSecCat.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            col.Controls.Add(lblSecCat);
+            stackRelayoutActions.Add((lblSecCat, 10, curW =>
+            {
+                lblSecCat.Left = 6;
+                lblSecCat.Width = Math.Max(160, curW - 12);
+            }));
+            y += lblSecCat.Height + 10;
+
+            int limBtnW = Math.Max(118, MeasurePillBtnWidth("Lưu hạn mức", 8.3F, 12));
+
+            foreach (var cat in standardCategories)
+            {
+                string catName = cat.Key;
+                int spent = CalculatePersonalSpentByCategory(catName);
+                int limit = categoryBudgets.ContainsKey(catName) ? categoryBudgets[catName] : 500000;
+                bool isOver = spent > limit;
+                Color catAccent = isOver ? clrRedDanger : GetCategoryAccentColor(catName);
+                Color badgeBg = BlendControlColor(catAccent, clrCardBg, isDarkMode ? 0.80f : 0.88f);
+                Color pillInk = isOver
+                    ? clrRedDanger
+                    : (isDarkMode ? BlendControlColor(catAccent, Color.White, 0.20f) : BlendControlColor(catAccent, clrTextMain, 0.24f));
+                Color pillBorder = BlendControlColor(catAccent, clrCardBg, isDarkMode ? 0.55f : 0.65f);
+                Color prgEnd = BlendControlColor(catAccent, Color.White, isDarkMode ? 0.18f : 0.25f);
+
+                var catCard = new ElevatedCardPanel(this)
+                {
+                    Location = new Point(0, y),
+                    Size = new Size(w, 114),
+                    Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                    CornerRadius = 18,
+                    CardFillColor = clrCardBg,
+                    CardBorderColor = isOver ? overCardBorder : clrBorderLight,
+                    CardBorderThickness = 1,
+                    ElevationLevel = 1,
+                    BackColor = clrAppBg
+                };
+
+                Rectangle cInner = catCard.InnerCardBounds;
+                var iconBadge = MakeSoftIconBadge(
+                    GetCategoryIcon(catName), cInner.Left + 12, cInner.Top + 16, 38, 12,
+                    badgeBg,
+                    catAccent);
+                catCard.Controls.Add(iconBadge);
+
+                string cleanCatName = GetCategoryCleanName(catName);
+                var lblCatName = MakeLabel(cleanCatName, cInner.Left + 58, cInner.Top + 12, 9.5F, FontStyle.Bold, clrTextMain, 140);
+
+                int rawPct = limit > 0
+                    ? (int)Math.Round(spent * 100.0 / limit, MidpointRounding.AwayFromZero)
+                    : (spent > 0 ? 100 : 0);
+                string pctTxt = $"{rawPct}%";
+                var pctPill = new CategoryPercentPill
+                {
+                    Text = pctTxt,
+                    Font = FontBold(7.5F),
+                    ForeColor = pillInk,
+                    BackColor = clrCardBg,
+                    PillFillColor = badgeBg,
+                    PillBorderColor = pillBorder,
+                    Height = 20
+                };
+                int pctPillW = Math.Max(34, TextRenderer.MeasureText(pctTxt, pctPill.Font, new Size(120, 24), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width + 14);
+                pctPill.Width = pctPillW;
+
+                string spentFullText = $"Đã tiêu: {spent:N0}đ / {limit:N0}đ";
+                string spentCompactText = $"{spent:N0}đ / {limit:N0}đ";
+                var lblSpent = MakeLabel(spentFullText, cInner.Left + 58, cInner.Top + 39, 8.2F, FontStyle.Bold, isOver ? clrRedDanger : pillInk, 170);
+
+                int pct = limit > 0 ? Math.Min(100, (int)Math.Round(spent * 100.0 / limit, MidpointRounding.AwayFromZero)) : (spent > 0 ? 100 : 0);
+                Guna2ProgressBar prg = new Guna2ProgressBar
+                {
+                    Location = new Point(cInner.Left + 12, cInner.Top + 78),
+                    Size = new Size(Math.Max(80, cInner.Width - limBtnW - 36), 12),
+                    BorderRadius = 6,
+                    Value = pct,
+                    FillColor = clrAppBg,
+                    ProgressColor = catAccent,
+                    ProgressColor2 = prgEnd,
+                    UseTransparentBackground = true
+                };
+
+                var txtLim = MakeTextBox(limit.ToString("N0"), "Hạn mức", cInner.Right - limBtnW - 12, cInner.Top + 14, limBtnW, 36, clrCardBg, true);
+                txtLim.TextAlign = HorizontalAlignment.Right;
+
+                var btnSetLim = MakeBtn("Lưu hạn mức", cInner.Right - limBtnW - 12, cInner.Top + 56, limBtnW, 36, 12, clrSoftGreenBg, softTextInk, clrSoftGreenBorder, 1, 8.3F);
+                btnSetLim.HoverState.FillColor = clrPrimaryGreen;
+                btnSetLim.HoverState.ForeColor = Color.White;
+                btnSetLim.HoverState.BorderColor = clrPrimaryGreen;
+                btnSetLim.Click += async (s, e) =>
+                {
+                    if (int.TryParse(txtLim.Text.Replace(".", "").Replace(",", "").Trim(), out int nLim) && nLim > 0)
+                    {
+                        categoryBudgets[catName] = nLim;
+                        await SendPacketSafeAsync(TcpPacket.Create(PacketType.UPDATE_CATEGORY_BUDGET_REQ, new UpdateCategoryBudgetRequestDto
+                        {
+                            UserId = currentUserId,
+                            Category = catName,
+                            NewLimit = nLim
+                        }));
+                        RefreshPaneContent("EXPENSE");
+                    }
+                };
+
+                void LayoutCatCard()
+                {
+                    if (catCard.IsDisposed) return;
+                    Rectangle inner = catCard.InnerCardBounds;
+                    if (inner.Width < 200) return;
+
+                    iconBadge.Location = new Point(inner.Left + 12, inner.Top + 16);
+
+                    int rightCtrlX = inner.Right - limBtnW - 12;
+                    txtLim.SetBounds(rightCtrlX, inner.Top + 14, limBtnW, 36);
+                    btnSetLim.SetBounds(rightCtrlX, inner.Top + 56, limBtnW, 36);
+
+                    int textLeft = inner.Left + 58;
+                    int midAvailW = Math.Max(80, rightCtrlX - textLeft - 4);
+                    int maxNameW = Math.Max(40, midAvailW - pctPillW - 5);
+                    int measuredNameW = TextRenderer.MeasureText(
+                        cleanCatName,
+                        lblCatName.Font,
+                        new Size(400, 40),
+                        TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width + 4;
+                    int nameW = Math.Min(maxNameW, measuredNameW);
+
+                    lblCatName.SetBounds(textLeft, inner.Top + 12, nameW, lblCatName.Height);
+                    int pillY = lblCatName.Top + Math.Max(0, (lblCatName.Height - pctPill.Height) / 2 - 1);
+                    pctPill.SetBounds(lblCatName.Right + 5, pillY, pctPillW, 20);
+
+                    int fullSpentW = TextRenderer.MeasureText(
+                        spentFullText,
+                        lblSpent.Font,
+                        new Size(400, 30),
+                        TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+                    lblSpent.Text = fullSpentW <= midAvailW ? spentFullText : spentCompactText;
+                    lblSpent.SetBounds(textLeft, inner.Top + 39, midAvailW, lblSpent.Height);
+                    prg.SetBounds(inner.Left + 12, inner.Top + 78, Math.Max(80, rightCtrlX - (inner.Left + 12) - 10), 12);
+                }
+
+                catCard.Controls.AddRange(new Control[] { lblCatName, pctPill, lblSpent, prg, txtLim, btnSetLim });
+                catCard.Resize += (s, e) => LayoutCatCard();
+                LayoutCatCard();
+                col.Controls.Add(catCard);
+                stackRelayoutActions.Add((catCard, 8, curW =>
+                {
+                    catCard.Width = curW;
+                    LayoutCatCard();
+                }));
+                y += catCard.Height + 8;
+            }
+
+            y += 4;
+            var btnExportCsv = MakeBtn("Xuất báo cáo chi tiêu (.CSV / Excel)", 4, y, Math.Max(180, w - 8), 48, 16, clrCardBg, softTextInk, clrSoftGreenBorder, 1, 8.8F);
+            btnExportCsv.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             btnExportCsv.HoverState.FillColor = clrSoftGreenBg;
             btnExportCsv.HoverState.BorderColor = clrPrimaryGreen;
             AttachBtnIcon(btnExportCsv, UiIcon.Receipt, accentText, 17);
             AttachControlImageDisposal(btnExportCsv);
             AttachEdgeResizeRedirector(btnExportCsv);
 
-            var lblExportStatus = MakeLabel("", 4, y + 54, 8.2F, FontStyle.Regular, clrTextMuted, w - 8);
-            lblExportStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            var lblExportStatus = MakeLabel("", 6, y + 54, 8.2F, FontStyle.Regular, clrTextMuted, Math.Max(160, w - 12));
+            lblExportStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left;
 
             btnExportCsv.Click += (s, e) =>
             {
@@ -1006,9 +1292,50 @@ namespace PocketLog.Client
 
             col.Controls.Add(btnExportCsv);
             col.Controls.Add(lblExportStatus);
-            y += 80;
+            stackRelayoutActions.Add((btnExportCsv, 6, curW =>
+            {
+                btnExportCsv.Left = 4;
+                btnExportCsv.Width = Math.Max(180, curW - 8);
+            }));
+            stackRelayoutActions.Add((lblExportStatus, 14, curW =>
+            {
+                lblExportStatus.Left = 6;
+                lblExportStatus.Width = Math.Max(160, curW - 12);
+            }));
 
-            col.Height = y;
+            bool relayoutingExpense = false;
+            void RelayoutExpenseStack()
+            {
+                if (relayoutingExpense || col.IsDisposed || page.IsDisposed) return;
+                int curW = col.Width;
+                if (curW < 200) return;
+
+                relayoutingExpense = true;
+                try
+                {
+                    int curY = 10;
+                    foreach (var item in stackRelayoutActions)
+                    {
+                        if (item.Ctrl.IsDisposed) continue;
+                        item.Ctrl.Top = curY;
+                        item.OnLayout(curW);
+                        curY = item.Ctrl.Bottom + item.GapAfter;
+                    }
+
+                    if (col.Height != curY)
+                    {
+                        col.Height = curY;
+                    }
+                    (page as AndroidOverlayScrollPanel)?.SyncLayout();
+                }
+                finally
+                {
+                    relayoutingExpense = false;
+                }
+            }
+
+            col.Resize += (s, e) => RelayoutExpenseStack();
+            RelayoutExpenseStack();
             return page;
         }
 

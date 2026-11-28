@@ -2022,5 +2022,499 @@ namespace PocketLog.Client
                 }
             }
         }
+
+        public readonly struct BudgetSlice
+        {
+            public string Label { get; }
+            public int Amount { get; }
+            public Color Color { get; }
+
+            public BudgetSlice(string label, int amount, Color color)
+            {
+                Label = label ?? "";
+                Amount = Math.Max(0, amount);
+                Color = color;
+            }
+        }
+
+        public class BudgetDonutCard : Control
+        {
+            private const int WideBreakpoint = 376;
+            private readonly Client owner;
+            private readonly List<BudgetSlice> slices = new List<BudgetSlice>();
+            private int totalSpent;
+            private int totalLimit;
+            private Rectangle donutBounds = Rectangle.Empty;
+
+            public int UsedPercent { get; private set; }
+            public bool IsOverBudget { get; private set; }
+            public Rectangle DonutBounds => donutBounds;
+            public int PreferredHeight => GetRequiredHeight(Width);
+
+            public BudgetDonutCard() : this(null)
+            {
+            }
+
+            public BudgetDonutCard(Client owner)
+            {
+                this.owner = owner;
+                SetStyle(
+                    ControlStyles.AllPaintingInWmPaint |
+                    ControlStyles.UserPaint |
+                    ControlStyles.OptimizedDoubleBuffer |
+                    ControlStyles.ResizeRedraw |
+                    ControlStyles.SupportsTransparentBackColor,
+                    true);
+                DoubleBuffered = true;
+                BackColor = owner != null ? owner.clrCardBg : Color.White;
+                Size = new Size(440, 174);
+                owner?.AttachEdgeResizeRedirector(this);
+                UpdateDonutBounds();
+            }
+
+            public void SetData(int totalSpent, int totalLimit, IReadOnlyList<BudgetSlice> slices)
+            {
+                this.totalSpent = Math.Max(0, totalSpent);
+                this.totalLimit = Math.Max(0, totalLimit);
+
+                this.slices.Clear();
+                if (slices != null)
+                {
+                    for (int i = 0; i < slices.Count; i++)
+                    {
+                        this.slices.Add(slices[i]);
+                    }
+                }
+
+                IsOverBudget = this.totalLimit > 0 && this.totalSpent > this.totalLimit;
+                if (this.totalLimit <= 0)
+                {
+                    UsedPercent = this.totalSpent > 0 ? 100 : 0;
+                }
+                else if (this.totalSpent <= 0)
+                {
+                    UsedPercent = 0;
+                }
+                else
+                {
+                    UsedPercent = (int)Math.Round(this.totalSpent * 100.0 / this.totalLimit, MidpointRounding.AwayFromZero);
+                }
+
+                UpdateDonutBounds();
+                Invalidate();
+            }
+
+            public int GetRequiredHeight(int width)
+            {
+                int legendRows = slices.Count > 0 ? (slices.Count + 1) / 2 : 0;
+                if (width < WideBreakpoint)
+                {
+                    int legendH = legendRows > 0 ? (legendRows * 20 + 8) : 0;
+                    return 222 + legendH;
+                }
+
+                int wideLegendBottom = 107 + (legendRows > 0 ? (legendRows * 20 + 6) : 0);
+                return Math.Max(156, wideLegendBottom);
+            }
+
+            private void UpdateDonutBounds()
+            {
+                int w = Math.Max(40, ClientSize.Width);
+                int h = Math.Max(40, ClientSize.Height);
+                if (w < WideBreakpoint)
+                {
+                    int dia = Math.Min(104, Math.Max(48, Math.Min(w - 16, h - 32)));
+                    int dx = Math.Max(4, (w - dia) / 2);
+                    int dy = 26;
+                    donutBounds = new Rectangle(dx, dy, dia, dia);
+                }
+                else
+                {
+                    int dia = Math.Min(116, Math.Max(48, Math.Min(w - 180, h - 30)));
+                    int bodyTop = 24;
+                    int bodyH = Math.Max(dia, h - bodyTop - 4);
+                    int dy = Math.Max(bodyTop, bodyTop + (bodyH - dia) / 2);
+                    donutBounds = new Rectangle(6, dy, dia, dia);
+                }
+            }
+
+            protected override void OnResize(EventArgs e)
+            {
+                base.OnResize(e);
+                UpdateDonutBounds();
+                Invalidate();
+            }
+
+            private static string FormatCompactVnd(int amount)
+            {
+                if (amount >= 1_000_000)
+                {
+                    double m = amount / 1_000_000.0;
+                    return $"{m:0.#}tr";
+                }
+                if (amount >= 1_000)
+                {
+                    return $"{amount / 1_000}k";
+                }
+                return $"{amount}đ";
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                int w = ClientSize.Width;
+                int h = ClientSize.Height;
+                if (w < 40 || h < 40) return;
+
+                UpdateDonutBounds();
+
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                AppPalette p = owner?.CurrentTheme ?? LightPalette;
+                bool dark = owner?.isDarkMode ?? false;
+                Color surface = BackColor.A == 255 ? BackColor : p.CardBg;
+
+                using (var bgBrush = new SolidBrush(surface))
+                {
+                    g.FillRectangle(bgBrush, ClientRectangle);
+                }
+
+                bool isNarrow = w < WideBreakpoint;
+                Color eyebrowClr = dark ? p.AccentSecondary : p.AccentPrimary;
+
+                using Font fEyebrow = owner != null ? owner.FontMedium(7.8F) : new Font("Segoe UI Semibold", 7.8F);
+                using Font fHero = owner != null ? owner.FontBold(isNarrow ? 13.5F : 14.5F) : new Font("Segoe UI", isNarrow ? 13.5F : 14.5F, FontStyle.Bold);
+                using Font fSub = owner != null ? owner.FontRegular(8.2F) : new Font("Segoe UI", 8.2F);
+                using Font fPill = owner != null ? owner.FontMedium(7.8F) : new Font("Segoe UI Semibold", 7.8F);
+                using Font fLegend = owner != null ? owner.FontRegular(7.8F) : new Font("Segoe UI", 7.8F);
+                using Font fLegendBold = owner != null ? owner.FontMedium(7.8F) : new Font("Segoe UI Semibold", 7.8F);
+                using Font fCenterSub = owner != null ? owner.FontRegular(7.5F) : new Font("Segoe UI", 7.5F);
+
+                TextFormatFlags eyebrowFlags = (isNarrow ? TextFormatFlags.HorizontalCenter : TextFormatFlags.Left)
+                    | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis;
+                TextRenderer.DrawText(g, "NGÂN SÁCH THÁNG NÀY", fEyebrow, new Rectangle(4, 2, Math.Max(40, w - 8), 18), eyebrowClr, eyebrowFlags);
+
+                // --- Donut Ring ---
+                PaintDonutRing(g, p, dark, fCenterSub);
+
+                // --- Hero Total, Subtitle, Status Pill & 2-Column Legend ---
+                string heroText = $"{totalSpent:N0}đ";
+                string limitText = totalLimit > 0 ? $"/ Hạn mức: {totalLimit:N0}đ" : "/ Chưa đặt hạn mức";
+
+                string pillText;
+                Color pillBg;
+                Color pillBorder;
+                Color pillFore;
+                if (IsOverBudget)
+                {
+                    pillText = $"Vượt: {(totalSpent - totalLimit):N0}đ";
+                    pillBg = p.SoftDangerBg;
+                    pillBorder = dark ? Color.FromArgb(136, 19, 55) : Color.FromArgb(254, 205, 211);
+                    pillFore = p.Danger;
+                }
+                else if (totalLimit > 0)
+                {
+                    pillText = $"Còn lại: {Math.Max(0, totalLimit - totalSpent):N0}đ";
+                    pillBg = dark ? Color.FromArgb(16, 62, 46) : Color.FromArgb(220, 252, 231);
+                    pillBorder = dark ? Color.FromArgb(32, 110, 82) : Color.FromArgb(167, 243, 208);
+                    pillFore = p.Success;
+                }
+                else
+                {
+                    pillText = "Chưa đặt hạn mức";
+                    pillBg = p.InputBg;
+                    pillBorder = p.BorderLight;
+                    pillFore = p.TextMuted;
+                }
+
+                int infoX = isNarrow ? 4 : (donutBounds.Right + 16);
+                int infoW = Math.Max(80, w - infoX - 4);
+                int heroY = isNarrow ? (donutBounds.Bottom + 8) : 22;
+                int subY = heroY + (isNarrow ? 28 : 30);
+                int pillY = subY + 22;
+                int legendY = pillY + 32;
+
+                TextFormatFlags infoAlign = isNarrow ? TextFormatFlags.HorizontalCenter : TextFormatFlags.Left;
+                TextFormatFlags singleLineFlags = infoAlign | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis;
+
+                TextRenderer.DrawText(g, heroText, fHero, new Rectangle(infoX, heroY, infoW, isNarrow ? 28 : 30), IsOverBudget ? p.Danger : p.TextMain, singleLineFlags);
+                TextRenderer.DrawText(g, limitText, fSub, new Rectangle(infoX, subY, infoW, 19), p.TextMuted, singleLineFlags);
+
+                int pillTextW = TextRenderer.MeasureText(pillText, fPill, new Size(400, 30), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+                int pillW = Math.Min(infoW, Math.Max(84, pillTextW + 22));
+                int pillX = isNarrow ? infoX + (infoW - pillW) / 2 : infoX;
+                var pillRect = new Rectangle(pillX, pillY, pillW, 24);
+                using (GraphicsPath pillPath = CreateRoundedPath(pillRect.X, pillRect.Y, pillRect.Width, pillRect.Height, 12f))
+                using (var pFill = new SolidBrush(pillBg))
+                using (var pBorder = new Pen(pillBorder, 1f))
+                {
+                    g.FillPath(pFill, pillPath);
+                    g.DrawPath(pBorder, pillPath);
+                }
+                TextRenderer.DrawText(
+                    g,
+                    pillText,
+                    fPill,
+                    new Rectangle(pillRect.X + 6, pillRect.Y, Math.Max(16, pillRect.Width - 12), pillRect.Height),
+                    pillFore,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+
+                if (slices.Count > 0)
+                {
+                    int legendX = isNarrow ? 6 : infoX;
+                    int legendW = isNarrow ? Math.Max(80, w - 12) : infoW;
+                    const int colGap = 10;
+                    int colW = Math.Max(48, (legendW - colGap) / 2);
+
+                    for (int i = 0; i < slices.Count; i++)
+                    {
+                        BudgetSlice sl = slices[i];
+                        int colIdx = i % 2;
+                        int rowIdx = i / 2;
+                        int ix = legendX + colIdx * (colW + colGap);
+                        int iy = legendY + rowIdx * 20;
+                        if (iy + 16 > h) break;
+
+                        Color dotClr = sl.Amount > 0
+                            ? sl.Color
+                            : Color.FromArgb(dark ? 135 : 155, sl.Color);
+                        using (var dotBrush = new SolidBrush(dotClr))
+                        {
+                            g.FillEllipse(dotBrush, ix, iy + 6, 8, 8);
+                        }
+
+                        int textAvail = Math.Max(20, colW - 14);
+                        string itemText = sl.Label;
+                        Font itemFont = sl.Amount > 0 ? fLegendBold : fLegend;
+                        if (sl.Amount > 0)
+                        {
+                            string detailed = $"{sl.Label} · {FormatCompactVnd(sl.Amount)}";
+                            int detW = TextRenderer.MeasureText(detailed, itemFont, new Size(400, 24), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+                            if (detW <= textAvail)
+                            {
+                                itemText = detailed;
+                            }
+                        }
+
+                        TextRenderer.DrawText(
+                            g,
+                            itemText,
+                            itemFont,
+                            new Rectangle(ix + 13, iy, textAvail, 20),
+                            sl.Amount > 0 ? p.TextMain : p.TextMuted,
+                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                    }
+                }
+            }
+
+            private void PaintDonutRing(Graphics g, AppPalette p, bool dark, Font fCenterSub)
+            {
+                if (donutBounds.Width < 36 || donutBounds.Height < 36) return;
+
+                float stroke = donutBounds.Width >= 112 ? 13.5f : 12f;
+                float halfStroke = stroke / 2f;
+                float inset = halfStroke + 2.5f;
+                float arcW = Math.Max(12f, donutBounds.Width - inset * 2f);
+                float arcH = Math.Max(12f, donutBounds.Height - inset * 2f);
+                var arcRect = new RectangleF(donutBounds.X + inset, donutBounds.Y + inset, arcW, arcH);
+
+                // Full 360° muted track ring
+                Color trackClr = dark ? Color.FromArgb(36, 44, 64) : Color.FromArgb(228, 234, 246);
+                using (var trackPen = new Pen(trackClr, stroke))
+                {
+                    g.DrawEllipse(trackPen, arcRect);
+                }
+
+                // Subtle outer Danger glow halo when over budget
+                if (IsOverBudget)
+                {
+                    float haloOut = halfStroke + 1.8f;
+                    var haloRect = new RectangleF(
+                        arcRect.X - haloOut,
+                        arcRect.Y - haloOut,
+                        arcRect.Width + haloOut * 2f,
+                        arcRect.Height + haloOut * 2f);
+                    using (var auraPen = new Pen(Color.FromArgb(dark ? 68 : 48, p.Danger), 4.5f))
+                    {
+                        g.DrawEllipse(auraPen, haloRect);
+                    }
+                    using (var haloPen = new Pen(Color.FromArgb(dark ? 225 : 210, p.Danger), 2.5f))
+                    {
+                        g.DrawEllipse(haloPen, haloRect);
+                    }
+                }
+
+                // Active category slices
+                if (totalSpent > 0)
+                {
+                    var active = new List<BudgetSlice>();
+                    double sliceSum = 0;
+                    for (int i = 0; i < slices.Count; i++)
+                    {
+                        if (slices[i].Amount > 0)
+                        {
+                            active.Add(slices[i]);
+                            sliceSum += slices[i].Amount;
+                        }
+                    }
+
+                    if (active.Count == 0)
+                    {
+                        double denom = Math.Max(totalLimit, totalSpent);
+                        float sweep = denom > 0 ? Math.Min(360f, (float)(totalSpent * 360.0 / denom)) : 360f;
+                        Color fallbackClr = IsOverBudget ? p.Danger : p.AccentPrimary;
+                        if (sweep >= 359.5f)
+                        {
+                            using var pen = new Pen(fallbackClr, stroke);
+                            g.DrawEllipse(pen, arcRect);
+                        }
+                        else if (sweep >= 0.5f)
+                        {
+                            using var pen = new Pen(fallbackClr, stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+                            g.DrawArc(pen, arcRect, -90f, sweep);
+                        }
+                    }
+                    else if (active.Count == 1)
+                    {
+                        double denom = Math.Max((double)totalLimit, Math.Max((double)totalSpent, active[0].Amount));
+                        float sweep = denom > 0 ? Math.Min(360f, (float)(active[0].Amount * 360.0 / denom)) : 360f;
+                        if (sweep < 4f) sweep = 4f;
+                        Color c = active[0].Color.A > 0 ? active[0].Color : p.AccentPrimary;
+                        if (sweep >= 359.5f)
+                        {
+                            using var pen = new Pen(c, stroke);
+                            g.DrawEllipse(pen, arcRect);
+                        }
+                        else if (sweep >= 0.5f)
+                        {
+                            using var pen = new Pen(c, stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+                            g.DrawArc(pen, arcRect, -90f, sweep);
+                        }
+                    }
+                    else
+                    {
+                        double denom = Math.Max((double)totalLimit, Math.Max((double)totalSpent, sliceSum));
+                        float targetTotal = denom > 0 ? Math.Min(360f, (float)(sliceSum * 360.0 / denom)) : 360f;
+                        float minSlice = Math.Min(4f, targetTotal / active.Count);
+
+                        float[] sweeps = new float[active.Count];
+                        float sumSweeps = 0f;
+                        for (int i = 0; i < active.Count; i++)
+                        {
+                            float raw = denom > 0 ? (float)(active[i].Amount * 360.0 / denom) : 0f;
+                            sweeps[i] = Math.Max(minSlice, raw);
+                            sumSweeps += sweeps[i];
+                        }
+
+                        if (sumSweeps > targetTotal && sumSweeps > 0.01f)
+                        {
+                            float reducible = 0f;
+                            for (int i = 0; i < sweeps.Length; i++)
+                            {
+                                reducible += Math.Max(0f, sweeps[i] - minSlice);
+                            }
+
+                            float excess = sumSweeps - targetTotal;
+                            if (reducible > 0.01f && excess <= reducible)
+                            {
+                                float ratio = (reducible - excess) / reducible;
+                                for (int i = 0; i < sweeps.Length; i++)
+                                {
+                                    if (sweeps[i] > minSlice)
+                                    {
+                                        sweeps[i] = minSlice + (sweeps[i] - minSlice) * ratio;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                float scale = targetTotal / sumSweeps;
+                                for (int i = 0; i < sweeps.Length; i++)
+                                {
+                                    sweeps[i] *= scale;
+                                }
+                            }
+                        }
+
+                        float startAngle = -90f;
+                        float gap = 1.6f;
+                        for (int i = 0; i < active.Count; i++)
+                        {
+                            float remaining = Math.Max(0f, 360f - (startAngle + 90f));
+                            float seg = Math.Min(sweeps[i], remaining);
+                            if (seg < 0.5f)
+                            {
+                                startAngle += seg;
+                                continue;
+                            }
+
+                            float drawStart = startAngle;
+                            float drawSweep = seg;
+                            if (seg > gap + 1.5f)
+                            {
+                                drawStart += gap * 0.5f;
+                                drawSweep -= gap;
+                            }
+
+                            if (drawSweep >= 0.5f)
+                            {
+                                Color c = active[i].Color.A > 0 ? active[i].Color : p.AccentPrimary;
+                                using var pen = new Pen(c, stroke) { StartCap = LineCap.Flat, EndCap = LineCap.Flat };
+                                g.DrawArc(pen, arcRect, drawStart, drawSweep);
+                            }
+                            startAngle += seg;
+                        }
+                    }
+                }
+
+                // Center readout: "{UsedPercent}%" + "đã dùng"
+                string pctText = $"{UsedPercent}%";
+                int holeDia = Math.Max(34, (int)Math.Floor(arcW - stroke - 4f));
+                float pctSize = donutBounds.Width >= 112 ? 15F : 13.5F;
+                Font pctFont = owner != null ? owner.FontBold(pctSize) : new Font("Segoe UI", pctSize, FontStyle.Bold);
+                try
+                {
+                    int measuredW = TextRenderer.MeasureText(pctText, pctFont, new Size(200, 40), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+                    if (measuredW > holeDia)
+                    {
+                        pctFont.Dispose();
+                        pctSize = Math.Max(10.5F, pctSize - 2.5F);
+                        pctFont = owner != null ? owner.FontBold(pctSize) : new Font("Segoe UI", pctSize, FontStyle.Bold);
+                    }
+
+                    int pctH = TextRenderer.MeasureText("99%", pctFont, new Size(200, 40), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Height;
+                    int subH = TextRenderer.MeasureText("đã dùng", fCenterSub, new Size(200, 30), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Height;
+                    int totalH = pctH + subH - 2;
+                    int cx = donutBounds.X + donutBounds.Width / 2;
+                    int cy = donutBounds.Y + donutBounds.Height / 2;
+                    int topY = cy - totalH / 2;
+
+                    var pctRect = new Rectangle(cx - holeDia / 2 - 4, topY, holeDia + 8, pctH);
+                    var subRect = new Rectangle(cx - holeDia / 2 - 4, topY + pctH - 2, holeDia + 8, subH + 2);
+
+                    TextRenderer.DrawText(
+                        g,
+                        pctText,
+                        pctFont,
+                        pctRect,
+                        IsOverBudget ? p.Danger : p.TextMain,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+
+                    TextRenderer.DrawText(
+                        g,
+                        "đã dùng",
+                        fCenterSub,
+                        subRect,
+                        p.TextMuted,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                }
+                finally
+                {
+                    pctFont.Dispose();
+                }
+            }
+        }
     }
 }
