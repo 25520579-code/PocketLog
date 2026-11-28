@@ -52,49 +52,95 @@ namespace PocketLog.Client
                 if (w < 4 || h < 4) return;
 
                 Graphics g = e.Graphics;
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-                // Fill full dock bounds first so pixels outside the 21px bottom corner arcs are initialized in BufferedGraphics
-                using (var cornerBrush = new SolidBrush(fallbackBg))
-                {
-                    g.FillRectangle(cornerBrush, 0, 0, w, h);
-                }
+                // Fill full dock bounds first so pixels outside the 22px bottom corner arcs are initialized in BufferedGraphics
+                using var cornerBrush = new SolidBrush(fallbackBg);
+                g.FillRectangle(cornerBrush, 0, 0, w, h);
 
-                using GraphicsPath clipPath = CreateBottomRoundedPath(w, h, 21f);
+                // Match Guna2PictureBox's exact (w - 1, h - 1) rounded content boundary so left/right edges align seamlessly
+                float clipW = Math.Max(2f, w - 1f);
+                float clipH = Math.Max(2f, h - 1f);
+                using GraphicsPath clipPath = CreateBottomRoundedPath(clipW, clipH, 22f);
                 GraphicsState saved = g.Save();
-                g.SetClip(clipPath);
-
-                if (previewBox != null && !previewBox.IsDisposed && previewBox.Visible && previewBox.Image != null)
+                try
                 {
-                    int pw = Math.Max(1, previewBox.Width);
-                    int ph = Math.Max(1, previewBox.Height);
-                    g.DrawImage(previewBox.Image, new Rectangle(0, -(ph - h), pw, ph));
-                }
+                    g.SetClip(clipPath);
 
-                using (var glassBrush = new LinearGradientBrush(
-                    new RectangleF(0f, 0f, w, h),
-                    Color.FromArgb(148, 11, 14, 20),
-                    Color.FromArgb(228, 11, 14, 20),
-                    LinearGradientMode.Vertical))
-                {
+                    if (previewBox != null && !previewBox.IsDisposed && previewBox.Visible && previewBox.Image != null)
+                    {
+                        int pw = Math.Max(1, previewBox.Width);
+                        int ph = Math.Max(1, previewBox.Height);
+                        Image img = previewBox.Image;
+                        if (img.Width == pw && img.Height == ph)
+                        {
+                            g.DrawImageUnscaled(img, 0, -(ph - h));
+                        }
+                        else
+                        {
+                            g.DrawImage(img, new Rectangle(0, -(ph - h), pw, ph));
+                        }
+                    }
+
+                    // Disable edge anti-aliasing on the full-width gradient fill so x=0 receives 100% alpha (never 50%)
+                    g.SmoothingMode = SmoothingMode.None;
+                    g.PixelOffsetMode = PixelOffsetMode.Default;
+
+                    using var glassBrush = new LinearGradientBrush(
+                        new Rectangle(0, 0, w, h),
+                        Color.FromArgb(0, 11, 14, 20),
+                        Color.FromArgb(226, 11, 14, 20),
+                        LinearGradientMode.Vertical);
+                    glassBrush.WrapMode = WrapMode.TileFlipXY;
+                    glassBrush.InterpolationColors = new ColorBlend
+                    {
+                        Positions = new[] { 0.0f, 0.30f, 0.68f, 1.0f },
+                        Colors = new[]
+                        {
+                            Color.FromArgb(0, 11, 14, 20),
+                            Color.FromArgb(88, 11, 14, 20),
+                            Color.FromArgb(176, 11, 14, 20),
+                            Color.FromArgb(226, 11, 14, 20)
+                        }
+                    };
                     g.FillRectangle(glassBrush, 0, 0, w, h);
                 }
-
-                using (var topLinePen = new Pen(Color.FromArgb(54, 255, 255, 255), 1f))
+                finally
                 {
-                    g.DrawLine(topLinePen, 0f, 0.5f, w, 0.5f);
+                    g.Restore(saved);
                 }
 
-                g.Restore(saved);
+                // Smooth anti-aliased bottom corner spandrels matching picPreview BorderRadius = 22
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.Default;
+                float d = Math.Max(2f, Math.Min(44f, Math.Min(clipW, clipH)));
+                float r = d / 2f;
+
+                using (var bl = new GraphicsPath())
+                {
+                    bl.AddLine(-1f, clipH - r, -1f, h + 1f);
+                    bl.AddLine(-1f, h + 1f, r, h + 1f);
+                    bl.AddArc(0f, clipH - d, d, d, 90f, 90f);
+                    bl.CloseFigure();
+                    g.FillPath(cornerBrush, bl);
+                }
+
+                using (var br = new GraphicsPath())
+                {
+                    br.AddLine(w + 1f, clipH - r, w + 1f, h + 1f);
+                    br.AddLine(w + 1f, h + 1f, clipW - r, h + 1f);
+                    br.AddArc(clipW - d, clipH - d, d, d, 90f, -90f);
+                    br.CloseFigure();
+                    g.FillPath(cornerBrush, br);
+                }
             }
 
             private static GraphicsPath CreateBottomRoundedPath(float w, float h, float r)
             {
                 float d = Math.Max(2f, Math.Min(r * 2f, Math.Min(w, h)));
+                float rad = d / 2f;
                 var path = new GraphicsPath();
                 path.AddLine(0f, 0f, w, 0f);
-                path.AddLine(w, 0f, w, h - d);
+                path.AddLine(w, 0f, w, h - rad);
                 path.AddArc(w - d, h - d, d, d, 0f, 90f);
                 path.AddArc(0f, h - d, d, d, 90f, 90f);
                 path.CloseFigure();
@@ -168,8 +214,8 @@ namespace PocketLog.Client
                         raw.RotateFlip(RotateFlipType.RotateNoneFlipX);
                         Bitmap frameForStorage = (Bitmap)raw.Clone();
 
-                        int boxW = Math.Max(320, targetPictureBox.Width);
-                        int boxH = Math.Max(180, targetPictureBox.Height);
+                        int boxW = targetPictureBox.Width > 20 ? targetPictureBox.Width : 320;
+                        int boxH = targetPictureBox.Height > 20 ? targetPictureBox.Height : 180;
                         Bitmap frameForUi = FitImageCover(raw, boxW, boxH) ?? (Bitmap)raw.Clone();
 
                         lock (frameLock)
@@ -298,8 +344,9 @@ namespace PocketLog.Client
             Color accentInk = isDarkMode ? clrTextMain : clrPrimaryGreen;
             Color accentIconInk = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
 
-            var badgeLiveTop = MakeBtn("Ăn uống (Cá nhân)", 0, y, w, 34, 17, clrSoftGreenBg, accentInk, clrSoftGreenBorder, 1, 8.8F);
-            badgeLiveTop.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            int initInnerW = Math.Max(200, w - 8);
+            var badgeLiveTop = MakeBtn("Ăn uống (Cá nhân)", 4, y, initInnerW, 34, 17, clrSoftGreenBg, accentInk, clrSoftGreenBorder, 1, 8.8F);
+            badgeLiveTop.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             badgeLiveTop.Cursor = Cursors.Default;
             badgeLiveTop.TabStop = false;
             badgeLiveTop.HoverState.FillColor = clrSoftGreenBg;
@@ -309,25 +356,27 @@ namespace PocketLog.Client
             y += 42;
 
             Color viewfinderBg = Color.FromArgb(15, 23, 42);
-            Guna2Panel pnlViewfinder = new Guna2Panel
+            Color viewfinderBorder = isDarkMode ? Color.FromArgb(46, 56, 78) : Color.FromArgb(30, 41, 59);
+            int initViewfinderH = Math.Clamp(initInnerW, 290, 380);
+            ElevatedCardPanel pnlViewfinder = new ElevatedCardPanel(this)
             {
                 Location = new Point(0, y),
-                Size = new Size(w, 390),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 24,
-                FillColor = viewfinderBg,
-                BorderColor = clrSoftGreenBorder,
-                BorderThickness = 2,
-                Padding = new Padding(3),
-                UseTransparentBackground = true,
+                Size = new Size(w, initViewfinderH),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                CornerRadius = 28,
+                ElevationLevel = 2,
+                CardFillColor = viewfinderBg,
+                CardBorderColor = viewfinderBorder,
+                CardBorderThickness = 1,
+                BackColor = clrAppBg,
+                Padding = new Padding(14, 12, 14, 16), // InnerCardBounds (4,2,4,6) + 10px seamless #0F172A bezel
                 Cursor = Cursors.Hand
             };
-            AttachEdgeResizeRedirector(pnlViewfinder);
 
             Guna2PictureBox picPreview = new Guna2PictureBox
             {
                 Dock = DockStyle.Fill,
-                BorderRadius = 21,
+                BorderRadius = 22,
                 SizeMode = PictureBoxSizeMode.Normal,
                 FillColor = viewfinderBg,
                 BackColor = Color.Transparent,
@@ -337,14 +386,14 @@ namespace PocketLog.Client
             };
             AttachEdgeResizeRedirector(picPreview);
 
-            const int dockHeight = 72;
+            const int dockHeight = 84;
             var pnlCameraDock = new CameraBottomDockPanel(this, picPreview, viewfinderBg)
             {
                 Dock = DockStyle.Bottom,
                 Height = dockHeight
             };
 
-            var btnChooseFile = MakeBtn("Chọn ảnh", 12, 18, 118, 36, 18, Color.FromArgb(34, 44, 66), Color.White, Color.FromArgb(94, 114, 148), 1, 8.5F);
+            var btnChooseFile = MakeBtn("Chọn ảnh", 12, 34, 118, 36, 18, Color.FromArgb(34, 44, 66), Color.White, Color.FromArgb(94, 114, 148), 1, 8.5F);
             btnChooseFile.HoverState.FillColor = theme.AccentPrimary;
             btnChooseFile.HoverState.BorderColor = theme.AccentPrimary;
             AttachBtnIcon(btnChooseFile, UiIcon.Photo, Color.White, 15);
@@ -352,7 +401,7 @@ namespace PocketLog.Client
 
             var shutterBtn = new DoubleRingShutterButton(this);
 
-            var btnPasteImg = MakeBtn("Dán ảnh", 240, 18, 114, 36, 18, Color.FromArgb(34, 44, 66), Color.White, Color.FromArgb(94, 114, 148), 1, 8.5F);
+            var btnPasteImg = MakeBtn("Dán ảnh", 240, 34, 114, 36, 18, Color.FromArgb(34, 44, 66), Color.White, Color.FromArgb(94, 114, 148), 1, 8.5F);
             btnPasteImg.HoverState.FillColor = theme.AccentPrimary;
             btnPasteImg.HoverState.BorderColor = theme.AccentPrimary;
             AttachBtnIcon(btnPasteImg, UiIcon.Clipboard, Color.White, 15);
@@ -369,14 +418,17 @@ namespace PocketLog.Client
                 int dh = pnlCameraDock.ClientSize.Height;
                 if (dw < 120 || dh < 40) return;
 
+                int bandH = Math.Min(64, dh);
+                int bandTop = dh - bandH;
+
                 int shutterX = (dw - shutterBtn.Width) / 2;
-                int shutterY = (dh - shutterBtn.Height) / 2;
+                int shutterY = bandTop + (bandH - shutterBtn.Height) / 2;
                 shutterBtn.Location = new Point(shutterX, shutterY);
 
                 int maxSideW = Math.Max(88, shutterX - 22);
                 int chooseW = Math.Min(desiredChooseW, maxSideW);
                 int pasteW = Math.Min(desiredPasteW, maxSideW);
-                int pillY = (dh - 36) / 2;
+                int pillY = bandTop + (bandH - 36) / 2;
 
                 btnChooseFile.SetBounds(12, pillY, chooseW, 36);
                 btnPasteImg.SetBounds(dw - 12 - pasteW, pillY, pasteW, 36);
@@ -449,7 +501,7 @@ namespace PocketLog.Client
             pnlViewfinder.Controls.Add(picPreview);
             LayoutViewfinderOverlays();
             col.Controls.Add(pnlViewfinder);
-            y += 400;
+            y += initViewfinderH + 10;
 
             Action<Image, string> applyCustomImageToViewfinder = (img, statusText) =>
             {
@@ -458,8 +510,10 @@ namespace PocketLog.Client
                 uploadedPhoto?.Dispose();
                 uploadedPhoto = new Bitmap(img);
 
+                int targetW = picPreview.Width > 20 ? picPreview.Width : 320;
+                int targetH = picPreview.Height > 20 ? picPreview.Height : 180;
                 Image oldPreview = picPreview.Image;
-                picPreview.Image = FitImageCover(uploadedPhoto, Math.Max(320, picPreview.Width), Math.Max(180, picPreview.Height));
+                picPreview.Image = FitImageCover(uploadedPhoto, targetW, targetH);
                 picPreview.Visible = true;
                 lblPrompt.Visible = false;
                 shutterBtn.IsCapturedMode = true;
@@ -494,6 +548,7 @@ namespace PocketLog.Client
             pnlViewfinder.Resize += (s, e) =>
             {
                 LayoutViewfinderOverlays();
+                LayoutCameraDock();
                 if (!isWebcamStreaming && uploadedPhoto != null && picPreview.Width > 20 && picPreview.Height > 20)
                 {
                     Image old = picPreview.Image;
@@ -555,8 +610,10 @@ namespace PocketLog.Client
                     {
                         uploadedPhoto?.Dispose();
                         uploadedPhoto = snap;
+                        int targetW = picPreview.Width > 20 ? picPreview.Width : 320;
+                        int targetH = picPreview.Height > 20 ? picPreview.Height : 180;
                         Image old = picPreview.Image;
-                        picPreview.Image = FitImageCover(uploadedPhoto, Math.Max(320, picPreview.Width), Math.Max(180, picPreview.Height));
+                        picPreview.Image = FitImageCover(uploadedPhoto, targetW, targetH);
                         old?.Dispose();
                         picPreview.Visible = true;
                         lblPrompt.Visible = false;
@@ -605,14 +662,14 @@ namespace PocketLog.Client
             // Hàng tiêu đề Danh mục chi tiêu + nút Không gắn tag
             Panel catHeader = new Panel
             {
-                Location = new Point(0, y),
-                Size = new Size(w, 34),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Location = new Point(4, y),
+                Size = new Size(initInnerW, 34),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
                 BackColor = Color.Transparent
             };
 
             int noTagW = Math.Max(158, MeasurePillBtnWidth("Không gắn tag", 8.6F, 17, true, 14));
-            var btnNoTag = MakeBtn("Không gắn tag", w - noTagW, 0, noTagW, 34, 17, clrCardBg, clrIndigo, clrBorderLight, 1, 8.6F);
+            var btnNoTag = MakeBtn("Không gắn tag", initInnerW - noTagW, 0, noTagW, 34, 17, clrCardBg, clrIndigo, clrBorderLight, 1, 8.6F);
             btnNoTag.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             AttachBtnIcon(btnNoTag, UiIcon.Close, clrIndigo, 14);
 
@@ -637,9 +694,9 @@ namespace PocketLog.Client
             // Lưới 3 cột x 2 hàng cân đối cho 6 danh mục
             var catGrid = new BufferedTableLayout
             {
-                Location = new Point(0, y),
-                Size = new Size(w, 86),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Location = new Point(4, y),
+                Size = new Size(initInnerW, 86),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
                 ColumnCount = 3,
                 RowCount = 2
             };
@@ -651,25 +708,29 @@ namespace PocketLog.Client
 
             var catButtons = new List<(Guna2Button Btn, string Key, UiIcon Icon)>();
 
-            // Thẻ nhập thông tin chi tiêu & gắn tag bạn bè (thu gọn, bỏ rowTools trùng lặp)
-            const int noteCardHeight = 218;
-            Guna2Panel pnlNoteCard = new Guna2Panel
+            // Thẻ nhập thông tin chi tiêu & gắn tag bạn bè nổi khối (ElevatedCardPanel)
+            const int noteCardHeight = 228;
+            ElevatedCardPanel pnlNoteCard = new ElevatedCardPanel(this)
             {
                 Location = new Point(0, y + 94),
                 Size = new Size(w, noteCardHeight),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 22,
-                FillColor = clrCardBg,
-                BorderColor = clrBorderLight,
-                BorderThickness = 1,
-                UseTransparentBackground = true
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
+                CornerRadius = 22,
+                ElevationLevel = 2,
+                CardFillColor = clrCardBg,
+                CardBorderColor = clrBorderLight,
+                CardBorderThickness = 1,
+                BackColor = clrAppBg
             };
+
+            Rectangle initNoteInner = pnlNoteCard.InnerCardBounds;
+            int initNoteContentW = Math.Max(180, initNoteInner.Width - 24);
 
             var rowItemAmt = new BufferedTableLayout
             {
-                Location = new Point(14, 12),
-                Size = new Size(w - 28, 40),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Location = new Point(initNoteInner.X + 12, initNoteInner.Y + 12),
+                Size = new Size(initNoteContentW, 40),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
                 ColumnCount = 2,
                 RowCount = 1
             };
@@ -694,9 +755,9 @@ namespace PocketLog.Client
 
             Panel tagFriendsHeader = new Panel
             {
-                Location = new Point(14, 56),
-                Size = new Size(w - 28, 26),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Location = new Point(initNoteInner.X + 12, initNoteInner.Y + 58),
+                Size = new Size(initNoteContentW, 26),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
                 BackColor = Color.Transparent
             };
 
@@ -746,9 +807,9 @@ namespace PocketLog.Client
 
             Guna2Panel pnlFriendBox = new Guna2Panel
             {
-                Location = new Point(14, 86),
-                Size = new Size(w - 28, 74),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Location = new Point(initNoteInner.X + 12, initNoteInner.Y + 88),
+                Size = new Size(initNoteContentW, 74),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
                 BorderRadius = 14,
                 FillColor = clrInputBg,
                 BorderColor = clrBorderLight,
@@ -767,8 +828,21 @@ namespace PocketLog.Client
             };
             pnlFriendBox.Controls.Add(flowFriends);
 
-            var txtCaption = MakeTextBox("", "Thêm một tin nhắn", 14, 167, w - 28, 40, clrCardBg);
-            txtCaption.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            var txtCaption = MakeTextBox("", "Thêm một tin nhắn", initNoteInner.X + 12, initNoteInner.Y + 169, initNoteContentW, 40, clrCardBg);
+            txtCaption.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+
+            void LayoutNoteCard()
+            {
+                if (pnlNoteCard.IsDisposed) return;
+                Rectangle inner = pnlNoteCard.InnerCardBounds;
+                int cx = inner.X + 12;
+                int cw = Math.Max(180, inner.Width - 24);
+                rowItemAmt.SetBounds(cx, inner.Y + 12, cw, 40);
+                tagFriendsHeader.SetBounds(cx, inner.Y + 58, cw, 26);
+                LayoutTagFriendsHeader();
+                pnlFriendBox.SetBounds(cx, inner.Y + 88, cw, 74);
+                txtCaption.SetBounds(cx, inner.Y + 169, cw, 40);
+            }
 
             void UpdateNotePlaceholderForCategory(string category)
             {
@@ -974,17 +1048,19 @@ namespace PocketLog.Client
             {
                 rowItemAmt, tagFriendsHeader, pnlFriendBox, txtCaption
             });
+            pnlNoteCard.Resize += (s, e) => LayoutNoteCard();
+            LayoutNoteCard();
 
             col.Controls.Add(catGrid);
             col.Controls.Add(pnlNoteCard);
-            y += 94 + noteCardHeight + 12;
+            y += 94 + noteCardHeight + 10;
 
             var btnPostPhoto = new Guna2GradientButton
             {
                 Text = "Đăng lên Bảng tin Pocket",
-                Location = new Point(0, y),
-                Size = new Size(w, 52),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                Location = new Point(4, y),
+                Size = new Size(initInnerW, 52),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left,
                 BorderRadius = 26,
                 FillColor = theme.AccentPrimary,
                 FillColor2 = theme.AccentSecondary,
@@ -1072,7 +1148,57 @@ namespace PocketLog.Client
             };
 
             col.Controls.Add(btnPostPhoto);
-            col.Height = btnPostPhoto.Bottom + 8;
+
+            bool relayoutingCamera = false;
+            void RelayoutCameraStack()
+            {
+                if (relayoutingCamera || col.IsDisposed || page.IsDisposed) return;
+                int curW = col.Width;
+                if (curW < 100) return;
+
+                relayoutingCamera = true;
+                try
+                {
+                    int innerW = Math.Max(200, curW - 8);
+                    int curY = 8;
+
+                    badgeLiveTop.SetBounds(4, curY, innerW, 34);
+                    curY += badgeLiveTop.Height + 8;
+
+                    int vfH = Math.Clamp(innerW, 290, 380);
+                    pnlViewfinder.SetBounds(0, curY, curW, vfH);
+                    LayoutViewfinderOverlays();
+                    LayoutCameraDock();
+                    curY += pnlViewfinder.Height + 10;
+
+                    catHeader.SetBounds(4, curY, innerW, 34);
+                    LayoutCatHeader();
+                    curY += catHeader.Height + 4;
+
+                    catGrid.SetBounds(4, curY, innerW, 86);
+                    curY += catGrid.Height + 8;
+
+                    pnlNoteCard.SetBounds(0, curY, curW, noteCardHeight);
+                    LayoutNoteCard();
+                    curY += pnlNoteCard.Height + 10;
+
+                    btnPostPhoto.SetBounds(4, curY, innerW, 52);
+
+                    int targetColH = btnPostPhoto.Bottom + 14;
+                    if (col.Height != targetColH)
+                    {
+                        col.Height = targetColH;
+                    }
+                    (page as AndroidOverlayScrollPanel)?.SyncLayout();
+                }
+                finally
+                {
+                    relayoutingCamera = false;
+                }
+            }
+
+            col.Resize += (s, e) => RelayoutCameraStack();
+            RelayoutCameraStack();
 
             Func<CameraDraftState> captureCameraDraft = () => new CameraDraftState
             {
