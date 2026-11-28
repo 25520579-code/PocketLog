@@ -33,86 +33,94 @@ namespace PocketLog.Client
         {
             if (g == null || bounds.Width < 4 || bounds.Height < 4) return;
 
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-            float radius = Math.Max(2f, Math.Min(cornerRadius, Math.Min(bounds.Width, bounds.Height) / 2f));
-
-            if (elevationLevel > 0)
+            GraphicsState outerSaved = g.Save();
+            try
             {
-                int lvl = Math.Clamp(elevationLevel, 1, 3);
-                float scale = lvl == 1 ? 0.65f : (lvl == 2 ? 1.0f : 1.35f);
-                Color shadowBase = isDarkMode ? Color.Black : Color.FromArgb(15, 23, 42);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-                int a3 = Math.Clamp((int)Math.Round((isDarkMode ? 24 : 8) * scale), 1, 95);
-                int a2 = Math.Clamp((int)Math.Round((isDarkMode ? 44 : 14) * scale), 1, 130);
-                int a1 = Math.Clamp((int)Math.Round((isDarkMode ? 70 : 22) * scale), 1, 165);
+                float radius = Math.Max(2f, Math.Min(cornerRadius, Math.Min(bounds.Width, bounds.Height) / 2f));
 
-                using (GraphicsPath p3 = CreateRoundedPath(bounds.X - 2.5f, bounds.Y + 5f, bounds.Width + 5f, bounds.Height, radius + 2f))
-                using (var b3 = new SolidBrush(Color.FromArgb(a3, shadowBase)))
+                if (elevationLevel > 0)
                 {
-                    g.FillPath(b3, p3);
+                    int lvl = Math.Clamp(elevationLevel, 1, 3);
+                    float scale = lvl == 1 ? 0.65f : (lvl == 2 ? 1.0f : 1.35f);
+                    Color shadowBase = isDarkMode ? Color.Black : Color.FromArgb(15, 23, 42);
+
+                    int a3 = Math.Clamp((int)Math.Round((isDarkMode ? 24 : 8) * scale), 1, 95);
+                    int a2 = Math.Clamp((int)Math.Round((isDarkMode ? 44 : 14) * scale), 1, 130);
+                    int a1 = Math.Clamp((int)Math.Round((isDarkMode ? 70 : 22) * scale), 1, 165);
+
+                    using (GraphicsPath p3 = CreateRoundedPath(bounds.X - 2.5f, bounds.Y + 5f, bounds.Width + 5f, bounds.Height, radius + 2f))
+                    using (var b3 = new SolidBrush(Color.FromArgb(a3, shadowBase)))
+                    {
+                        g.FillPath(b3, p3);
+                    }
+
+                    using (GraphicsPath p2 = CreateRoundedPath(bounds.X - 1.5f, bounds.Y + 3f, bounds.Width + 3f, bounds.Height, radius + 1f))
+                    using (var b2 = new SolidBrush(Color.FromArgb(a2, shadowBase)))
+                    {
+                        g.FillPath(b2, p2);
+                    }
+
+                    using (GraphicsPath p1 = CreateRoundedPath(bounds.X - 0.5f, bounds.Y + 1f, bounds.Width + 1f, bounds.Height, radius + 0.5f))
+                    using (var b1 = new SolidBrush(Color.FromArgb(a1, shadowBase)))
+                    {
+                        g.FillPath(b1, p1);
+                    }
                 }
 
-                using (GraphicsPath p2 = CreateRoundedPath(bounds.X - 1.5f, bounds.Y + 3f, bounds.Width + 3f, bounds.Height, radius + 1f))
-                using (var b2 = new SolidBrush(Color.FromArgb(a2, shadowBase)))
+                var cardRect = new RectangleF(
+                    bounds.X + 0.5f,
+                    bounds.Y + 0.5f,
+                    Math.Max(2f, bounds.Width - 1f),
+                    Math.Max(2f, bounds.Height - 1f));
+
+                using GraphicsPath cardPath = CreateRoundedPath(cardRect.X, cardRect.Y, cardRect.Width, cardRect.Height, radius);
+                if (fillColor.A > 0)
                 {
-                    g.FillPath(b2, p2);
+                    using var fillBrush = new SolidBrush(fillColor);
+                    g.FillPath(fillBrush, cardPath);
                 }
 
-                using (GraphicsPath p1 = CreateRoundedPath(bounds.X - 0.5f, bounds.Y + 1f, bounds.Width + 1f, bounds.Height, radius + 0.5f))
-                using (var b1 = new SolidBrush(Color.FromArgb(a1, shadowBase)))
+                if (isDarkMode && fillColor.A > 0 && bounds.Width >= 10 && bounds.Height >= 10)
                 {
-                    g.FillPath(b1, p1);
+                    float inset = Math.Max(1.0f, borderThickness);
+                    float rimW = Math.Max(2f, bounds.Width - inset * 2f);
+                    float rimH = Math.Max(2f, bounds.Height - inset * 2f);
+                    float rimRadius = Math.Max(1f, radius - inset * 0.6f);
+                    float fadeH = Math.Max(6f, Math.Min(bounds.Height * 0.45f, radius + 6f));
+
+                    GraphicsState saved = g.Save();
+                    try
+                    {
+                        g.SetClip(cardPath, CombineMode.Intersect);
+                        g.SetClip(new RectangleF(bounds.X, bounds.Y, bounds.Width, fadeH), CombineMode.Intersect);
+
+                        using GraphicsPath rimPath = CreateRoundedPath(bounds.X + inset, bounds.Y + inset, rimW, rimH, rimRadius);
+                        using var rimBrush = new LinearGradientBrush(
+                            new PointF(bounds.X, bounds.Y + inset),
+                            new PointF(bounds.X, bounds.Y + inset + fadeH),
+                            Color.FromArgb(26, 255, 255, 255),
+                            Color.FromArgb(0, 255, 255, 255));
+                        using var rimPen = new Pen(rimBrush, 1.2f);
+                        g.DrawPath(rimPen, rimPath);
+                    }
+                    finally
+                    {
+                        g.Restore(saved);
+                    }
+                }
+
+                if (borderThickness > 0 && borderColor.A > 0)
+                {
+                    using var borderPen = new Pen(borderColor, borderThickness);
+                    g.DrawPath(borderPen, cardPath);
                 }
             }
-
-            var cardRect = new RectangleF(
-                bounds.X + 0.5f,
-                bounds.Y + 0.5f,
-                Math.Max(2f, bounds.Width - 1f),
-                Math.Max(2f, bounds.Height - 1f));
-
-            using GraphicsPath cardPath = CreateRoundedPath(cardRect.X, cardRect.Y, cardRect.Width, cardRect.Height, radius);
-            if (fillColor.A > 0)
+            finally
             {
-                using var fillBrush = new SolidBrush(fillColor);
-                g.FillPath(fillBrush, cardPath);
-            }
-
-            if (isDarkMode && bounds.Width >= 10 && bounds.Height >= 10)
-            {
-                float inset = Math.Max(1.0f, borderThickness);
-                float rimW = Math.Max(2f, bounds.Width - inset * 2f);
-                float rimH = Math.Max(2f, bounds.Height - inset * 2f);
-                float rimRadius = Math.Max(1f, radius - inset * 0.6f);
-                float fadeH = Math.Max(6f, Math.Min(bounds.Height * 0.45f, radius + 6f));
-
-                GraphicsState saved = g.Save();
-                try
-                {
-                    g.SetClip(cardPath, CombineMode.Intersect);
-                    g.SetClip(new RectangleF(bounds.X, bounds.Y, bounds.Width, fadeH), CombineMode.Intersect);
-
-                    using GraphicsPath rimPath = CreateRoundedPath(bounds.X + inset, bounds.Y + inset, rimW, rimH, rimRadius);
-                    using var rimBrush = new LinearGradientBrush(
-                        new PointF(bounds.X, bounds.Y + inset),
-                        new PointF(bounds.X, bounds.Y + inset + fadeH),
-                        Color.FromArgb(26, 255, 255, 255),
-                        Color.FromArgb(0, 255, 255, 255));
-                    using var rimPen = new Pen(rimBrush, 1.2f);
-                    g.DrawPath(rimPen, rimPath);
-                }
-                finally
-                {
-                    g.Restore(saved);
-                }
-            }
-
-            if (borderThickness > 0 && borderColor.A > 0)
-            {
-                using var borderPen = new Pen(borderColor, borderThickness);
-                g.DrawPath(borderPen, cardPath);
+                g.Restore(outerSaved);
             }
         }
 
@@ -785,7 +793,7 @@ namespace PocketLog.Client
             private void HandleTrackMouseMove(int mouseY, MouseButtons buttons)
             {
                 if (IsTearingDown) return;
-                if (isDraggingThumb && buttons == MouseButtons.Left && IsScrollable)
+                if (isDraggingThumb && (buttons & MouseButtons.Left) != 0 && IsScrollable)
                 {
                     int trackH = Math.Max(20, (scrollTrack?.Height ?? ClientSize.Height) - TrackPadY * 2);
                     int travel = Math.Max(1, trackH - thumbBounds.Height);
@@ -2291,7 +2299,7 @@ namespace PocketLog.Client
                         if (sl.Amount > 0)
                         {
                             string detailed = $"{sl.Label} · {FormatCompactVnd(sl.Amount)}";
-                            int detW = TextRenderer.MeasureText(detailed, itemFont, new Size(400, 24), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+                            int detW = TextRenderer.MeasureText(detailed, itemFont, new Size(400, 24), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
                             if (detW <= textAvail)
                             {
                                 itemText = detailed;
@@ -2304,7 +2312,7 @@ namespace PocketLog.Client
                             itemFont,
                             new Rectangle(ix + 13, iy, textAvail, 20),
                             sl.Amount > 0 ? p.TextMain : p.TextMuted,
-                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                     }
                 }
             }
@@ -2360,28 +2368,8 @@ namespace PocketLog.Client
                         }
                     }
 
-                    if (active.Count == 0)
+                    void DrawSegmentArc(Color c, float sweep, float startDeg = -90f, bool roundCaps = true)
                     {
-                        double denom = Math.Max(totalLimit, totalSpent);
-                        float sweep = denom > 0 ? Math.Min(360f, (float)(totalSpent * 360.0 / denom)) : 360f;
-                        Color fallbackClr = IsOverBudget ? p.Danger : p.AccentPrimary;
-                        if (sweep >= 359.5f)
-                        {
-                            using var pen = new Pen(fallbackClr, stroke);
-                            g.DrawEllipse(pen, arcRect);
-                        }
-                        else if (sweep >= 0.5f)
-                        {
-                            using var pen = new Pen(fallbackClr, stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-                            g.DrawArc(pen, arcRect, -90f, sweep);
-                        }
-                    }
-                    else if (active.Count == 1)
-                    {
-                        double denom = Math.Max((double)totalLimit, Math.Max((double)totalSpent, active[0].Amount));
-                        float sweep = denom > 0 ? Math.Min(360f, (float)(active[0].Amount * 360.0 / denom)) : 360f;
-                        if (sweep < 4f) sweep = 4f;
-                        Color c = active[0].Color.A > 0 ? active[0].Color : p.AccentPrimary;
                         if (sweep >= 359.5f)
                         {
                             using var pen = new Pen(c, stroke);
@@ -2389,9 +2377,29 @@ namespace PocketLog.Client
                         }
                         else if (sweep >= 0.5f)
                         {
-                            using var pen = new Pen(c, stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-                            g.DrawArc(pen, arcRect, -90f, sweep);
+                            using var pen = new Pen(c, stroke)
+                            {
+                                StartCap = roundCaps ? LineCap.Round : LineCap.Flat,
+                                EndCap = roundCaps ? LineCap.Round : LineCap.Flat
+                            };
+                            g.DrawArc(pen, arcRect, startDeg, sweep);
                         }
+                    }
+
+                    if (active.Count == 0)
+                    {
+                        double denom = Math.Max(totalLimit, totalSpent);
+                        float sweep = denom > 0 ? Math.Min(360f, (float)(totalSpent * 360.0 / denom)) : 360f;
+                        Color fallbackClr = IsOverBudget ? p.Danger : p.AccentPrimary;
+                        DrawSegmentArc(fallbackClr, sweep);
+                    }
+                    else if (active.Count == 1)
+                    {
+                        double denom = Math.Max((double)totalLimit, Math.Max((double)totalSpent, active[0].Amount));
+                        float sweep = denom > 0 ? Math.Min(360f, (float)(active[0].Amount * 360.0 / denom)) : 360f;
+                        if (sweep < 4f) sweep = 4f;
+                        Color c = active[0].Color.A > 0 ? active[0].Color : p.AccentPrimary;
+                        DrawSegmentArc(c, sweep);
                     }
                     else
                     {
@@ -2461,8 +2469,7 @@ namespace PocketLog.Client
                             if (drawSweep >= 0.5f)
                             {
                                 Color c = active[i].Color.A > 0 ? active[i].Color : p.AccentPrimary;
-                                using var pen = new Pen(c, stroke) { StartCap = LineCap.Flat, EndCap = LineCap.Flat };
-                                g.DrawArc(pen, arcRect, drawStart, drawSweep);
+                                DrawSegmentArc(c, drawSweep, drawStart, roundCaps: false);
                             }
                             startAngle += seg;
                         }

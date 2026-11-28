@@ -207,26 +207,37 @@ namespace PocketLog.Client
                 relayoutingFeed = true;
                 try
                 {
-                    int curY = 14;
-                    foreach (var item in stackItems)
+                    col.SuspendLayout();
+                    try
                     {
-                        if (item.Ctrl == null || item.Ctrl.IsDisposed) continue;
-                        if (item.Ctrl.Width != curW)
+                        int curY = 14;
+                        foreach (var item in stackItems)
                         {
-                            item.Ctrl.Width = curW;
+                            if (item.Ctrl == null || item.Ctrl.IsDisposed) continue;
+                            if (item.Ctrl.Width != curW)
+                            {
+                                item.Ctrl.Width = curW;
+                            }
+                            else
+                            {
+                                item.UpdateLayout?.Invoke();
+                            }
+                            if (item.Ctrl.Left != 0 || item.Ctrl.Top != curY)
+                            {
+                                item.Ctrl.Location = new Point(0, curY);
+                            }
+                            curY += item.Ctrl.Height + item.BottomGap;
                         }
-                        item.UpdateLayout?.Invoke();
-                        if (item.Ctrl.Left != 0 || item.Ctrl.Top != curY)
-                        {
-                            item.Ctrl.Location = new Point(0, curY);
-                        }
-                        curY += item.Ctrl.Height + item.BottomGap;
-                    }
 
-                    int targetColH = curY + 20;
-                    if (col.Height != targetColH)
+                        int targetColH = curY + 20;
+                        if (col.Height != targetColH)
+                        {
+                            col.Height = targetColH;
+                        }
+                    }
+                    finally
                     {
-                        col.Height = targetColH;
+                        col.ResumeLayout(false);
                     }
                     (page as AndroidOverlayScrollPanel)?.SyncLayout();
                 }
@@ -260,12 +271,14 @@ namespace PocketLog.Client
                 TaggedDebtItem unpaidByTitle = taggedDebts.FirstOrDefault(d =>
                     d != null &&
                     !d.IsConfirmedPaid &&
+                    (post.PostId <= 0 || d.PostId <= 0 || d.PostId == post.PostId) &&
                     string.Equals((d.Title ?? "").Trim(), note, StringComparison.OrdinalIgnoreCase) &&
                     (post.Amount <= 0 || d.TotalAmount == post.Amount));
                 if (unpaidByTitle != null) return unpaidByTitle;
 
                 TaggedDebtItem anyByTitle = taggedDebts.FirstOrDefault(d =>
                     d != null &&
+                    (post.PostId <= 0 || d.PostId <= 0 || d.PostId == post.PostId) &&
                     string.Equals((d.Title ?? "").Trim(), note, StringComparison.OrdinalIgnoreCase) &&
                     (post.Amount <= 0 || d.TotalAmount == post.Amount));
                 if (anyByTitle != null) return anyByTitle;
@@ -276,6 +289,7 @@ namespace PocketLog.Client
                 TaggedDebtItem unpaidByAmount = taggedDebts.FirstOrDefault(d =>
                     d != null &&
                     !d.IsConfirmedPaid &&
+                    (post.PostId <= 0 || d.PostId <= 0 || d.PostId == post.PostId) &&
                     d.TotalAmount == post.Amount &&
                     (string.IsNullOrEmpty(post.Category) || string.Equals(d.Category, post.Category, StringComparison.OrdinalIgnoreCase)));
                 if (unpaidByAmount != null) return unpaidByAmount;
@@ -419,28 +433,33 @@ namespace PocketLog.Client
             AttachControlImageDisposal(btnLike);
             likeTip?.SetToolTip(btnLike, "Lưu yêu thích trên máy này");
 
+            Guna2Button CreateFooterActionBtn(string label, int minW, Action onClick)
+            {
+                int btnW = Math.Max(minW, MeasurePillBtnWidth(label, 8.2F, 17, true, 14));
+                var btn = MakeBtn(label, 0, 4, btnW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
+                btn.Name = "btnAction";
+                btn.HoverState.FillColor = clrCardBg;
+                btn.HoverState.ForeColor = accentText;
+                btn.HoverState.BorderColor = clrPrimaryGreen;
+                Image oldImg = btn.Image;
+                btn.Image = CreateVectorIcon(UiIcon.ArrowRight, accentText, 14);
+                btn.ImageSize = new Size(14, 14);
+                btn.ImageAlign = HorizontalAlignment.Right;
+                btn.ImageOffset = new Point(4, 0);
+                btn.TextAlign = HorizontalAlignment.Left;
+                btn.TextOffset = new Point(4, 0);
+                oldImg?.Dispose();
+                AttachControlImageDisposal(btn);
+                AttachEdgeResizeRedirector(btn);
+                btn.Click += (s, e) => onClick();
+                return btn;
+            }
+
             Control rightFooterCtrl;
             int rightDesiredW;
             if (post.HasTag)
             {
-                const string splitLabel = "Xem chia bill";
-                rightDesiredW = Math.Max(128, MeasurePillBtnWidth(splitLabel, 8.2F, 17, true, 14));
-                var btnAction = MakeBtn(splitLabel, 0, 4, rightDesiredW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
-                btnAction.Name = "btnAction";
-                btnAction.HoverState.FillColor = clrCardBg;
-                btnAction.HoverState.ForeColor = accentText;
-                btnAction.HoverState.BorderColor = clrPrimaryGreen;
-                Image oldImg = btnAction.Image;
-                btnAction.Image = CreateVectorIcon(UiIcon.ArrowRight, accentText, 14);
-                btnAction.ImageSize = new Size(14, 14);
-                btnAction.ImageAlign = HorizontalAlignment.Right;
-                btnAction.ImageOffset = new Point(4, 0);
-                btnAction.TextAlign = HorizontalAlignment.Left;
-                btnAction.TextOffset = new Point(4, 0);
-                oldImg?.Dispose();
-                AttachControlImageDisposal(btnAction);
-                AttachEdgeResizeRedirector(btnAction);
-                btnAction.Click += (s, e) =>
+                var btnAction = CreateFooterActionBtn("Xem chia bill", 128, () =>
                 {
                     TaggedDebtItem matched = FindMatchingSplitDebt(post);
                     if (matched != null)
@@ -451,31 +470,20 @@ namespace PocketLog.Client
                             isUnpaidDropdownOpen = true;
                         }
                     }
+                    bool wasExpenseActive = IsTabActive("EXPENSE");
                     EnsureTabVisible("EXPENSE");
-                    RefreshPaneContent("EXPENSE");
-                };
+                    if (wasExpenseActive)
+                    {
+                        RefreshPaneContent("EXPENSE");
+                    }
+                });
+                rightDesiredW = btnAction.Width;
                 rightFooterCtrl = btnAction;
             }
             else if (isMyTopCard || post.IsMine)
             {
-                const string galleryLabel = "Mở Kho ảnh";
-                rightDesiredW = Math.Max(122, MeasurePillBtnWidth(galleryLabel, 8.2F, 17, true, 14));
-                var btnAction = MakeBtn(galleryLabel, 0, 4, rightDesiredW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
-                btnAction.Name = "btnAction";
-                btnAction.HoverState.FillColor = clrCardBg;
-                btnAction.HoverState.ForeColor = accentText;
-                btnAction.HoverState.BorderColor = clrPrimaryGreen;
-                Image oldImg = btnAction.Image;
-                btnAction.Image = CreateVectorIcon(UiIcon.ArrowRight, accentText, 14);
-                btnAction.ImageSize = new Size(14, 14);
-                btnAction.ImageAlign = HorizontalAlignment.Right;
-                btnAction.ImageOffset = new Point(4, 0);
-                btnAction.TextAlign = HorizontalAlignment.Left;
-                btnAction.TextOffset = new Point(4, 0);
-                oldImg?.Dispose();
-                AttachControlImageDisposal(btnAction);
-                AttachEdgeResizeRedirector(btnAction);
-                btnAction.Click += (s, e) => OpenMyGalleryScreen();
+                var btnAction = CreateFooterActionBtn("Mở Kho ảnh", 122, () => OpenMyGalleryScreen());
+                rightDesiredW = btnAction.Width;
                 rightFooterCtrl = btnAction;
             }
             else
@@ -1045,7 +1053,7 @@ namespace PocketLog.Client
                 void LayoutGalleryGrid()
                 {
                     if (grid.IsDisposed || col.IsDisposed) return;
-                    int gw = Math.Max(260, col.Width);
+                    int gw = Math.Max(290, col.Width);
                     if (grid.Width != gw)
                     {
                         grid.Width = gw;

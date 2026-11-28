@@ -509,8 +509,8 @@ namespace PocketLog.Client
             col.Controls.Add(pnlBanner);
             stackRelayoutActions.Add((pnlBanner, 10, curW =>
             {
-                pnlBanner.Width = curW;
-                LayoutBanner();
+                if (pnlBanner.Width != curW) pnlBanner.Width = curW;
+                else LayoutBanner();
             }));
             y += pnlBanner.Height + 10;
 
@@ -760,8 +760,8 @@ namespace PocketLog.Client
                 col.Controls.Add(cardActiveDebt);
                 stackRelayoutActions.Add((cardActiveDebt, 10, curW =>
                 {
-                    cardActiveDebt.Width = curW;
-                    LayoutActiveDebtCard();
+                    if (cardActiveDebt.Width != curW) cardActiveDebt.Width = curW;
+                    else LayoutActiveDebtCard();
                 }));
                 y += cardActiveDebt.Height + 10;
             }
@@ -1202,8 +1202,8 @@ namespace PocketLog.Client
                 col.Controls.Add(catCard);
                 stackRelayoutActions.Add((catCard, 8, curW =>
                 {
-                    catCard.Width = curW;
-                    LayoutCatCard();
+                    if (catCard.Width != curW) catCard.Width = curW;
+                    else LayoutCatCard();
                 }));
                 y += catCard.Height + 8;
             }
@@ -1313,18 +1313,26 @@ namespace PocketLog.Client
                 relayoutingExpense = true;
                 try
                 {
-                    int curY = 10;
-                    foreach (var item in stackRelayoutActions)
+                    col.SuspendLayout();
+                    try
                     {
-                        if (item.Ctrl.IsDisposed) continue;
-                        item.Ctrl.Top = curY;
-                        item.OnLayout(curW);
-                        curY = item.Ctrl.Bottom + item.GapAfter;
-                    }
+                        int curY = 10;
+                        foreach (var item in stackRelayoutActions)
+                        {
+                            if (item.Ctrl.IsDisposed) continue;
+                            if (item.Ctrl.Top != curY) item.Ctrl.Top = curY;
+                            item.OnLayout(curW);
+                            curY = item.Ctrl.Bottom + item.GapAfter;
+                        }
 
-                    if (col.Height != curY)
+                        if (col.Height != curY)
+                        {
+                            col.Height = curY;
+                        }
+                    }
+                    finally
                     {
-                        col.Height = curY;
+                        col.ResumeLayout(false);
                     }
                     (page as AndroidOverlayScrollPanel)?.SyncLayout();
                 }

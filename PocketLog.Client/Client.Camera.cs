@@ -21,6 +21,7 @@ namespace PocketLog.Client
         private Bitmap latestWebcamFrame;
         private readonly object frameLock = new object();
         private int selectedCameraIndex = 0;
+        private volatile int webcamTargetW = 320, webcamTargetH = 180;
 
         private Action pasteImageToCameraAction;
         private Action refreshCameraFriendsAction;
@@ -64,21 +65,14 @@ namespace PocketLog.Client
                 GraphicsState saved = g.Save();
                 try
                 {
-                    g.SetClip(clipPath);
+                    g.SetClip(clipPath, CombineMode.Intersect);
 
                     if (previewBox != null && !previewBox.IsDisposed && previewBox.Visible && previewBox.Image != null)
                     {
                         int pw = Math.Max(1, previewBox.Width);
                         int ph = Math.Max(1, previewBox.Height);
                         Image img = previewBox.Image;
-                        if (img.Width == pw && img.Height == ph)
-                        {
-                            g.DrawImageUnscaled(img, 0, -(ph - h));
-                        }
-                        else
-                        {
-                            g.DrawImage(img, new Rectangle(0, -(ph - h), pw, ph));
-                        }
+                        g.DrawImage(img, new Rectangle(0, -(ph - h), pw, ph), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel);
                     }
 
                     // Disable edge anti-aliasing on the full-width gradient fill so x=0 receives 100% alpha (never 50%)
@@ -110,27 +104,35 @@ namespace PocketLog.Client
                 }
 
                 // Smooth anti-aliased bottom corner spandrels matching picPreview BorderRadius = 22
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.PixelOffsetMode = PixelOffsetMode.Default;
-                float d = Math.Max(2f, Math.Min(44f, Math.Min(clipW, clipH)));
-                float r = d / 2f;
-
-                using (var bl = new GraphicsPath())
+                GraphicsState spandrelSaved = g.Save();
+                try
                 {
-                    bl.AddLine(-1f, clipH - r, -1f, h + 1f);
-                    bl.AddLine(-1f, h + 1f, r, h + 1f);
-                    bl.AddArc(0f, clipH - d, d, d, 90f, 90f);
-                    bl.CloseFigure();
-                    g.FillPath(cornerBrush, bl);
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    g.PixelOffsetMode = PixelOffsetMode.Default;
+                    float d = Math.Max(2f, Math.Min(44f, Math.Min(clipW, clipH)));
+                    float r = d / 2f;
+
+                    using (var bl = new GraphicsPath())
+                    {
+                        bl.AddLine(-1f, clipH - r, -1f, h + 1f);
+                        bl.AddLine(-1f, h + 1f, r, h + 1f);
+                        bl.AddArc(0f, clipH - d, d, d, 90f, 90f);
+                        bl.CloseFigure();
+                        g.FillPath(cornerBrush, bl);
+                    }
+
+                    using (var br = new GraphicsPath())
+                    {
+                        br.AddLine(w + 1f, clipH - r, w + 1f, h + 1f);
+                        br.AddLine(w + 1f, h + 1f, clipW - r, h + 1f);
+                        br.AddArc(clipW - d, clipH - d, d, d, 90f, -90f);
+                        br.CloseFigure();
+                        g.FillPath(cornerBrush, br);
+                    }
                 }
-
-                using (var br = new GraphicsPath())
+                finally
                 {
-                    br.AddLine(w + 1f, clipH - r, w + 1f, h + 1f);
-                    br.AddLine(w + 1f, h + 1f, clipW - r, h + 1f);
-                    br.AddArc(clipW - d, clipH - d, d, d, 90f, -90f);
-                    br.CloseFigure();
-                    g.FillPath(cornerBrush, br);
+                    g.Restore(spandrelSaved);
                 }
             }
 
@@ -204,6 +206,12 @@ namespace PocketLog.Client
                     }
                 }
 
+                if (targetPictureBox != null && !targetPictureBox.IsDisposed)
+                {
+                    webcamTargetW = targetPictureBox.Width > 20 ? targetPictureBox.Width : 320;
+                    webcamTargetH = targetPictureBox.Height > 20 ? targetPictureBox.Height : 180;
+                }
+
                 webcamDevice.NewFrame += (sender, eventArgs) =>
                 {
                     try
@@ -214,8 +222,8 @@ namespace PocketLog.Client
                         raw.RotateFlip(RotateFlipType.RotateNoneFlipX);
                         Bitmap frameForStorage = (Bitmap)raw.Clone();
 
-                        int boxW = targetPictureBox.Width > 20 ? targetPictureBox.Width : 320;
-                        int boxH = targetPictureBox.Height > 20 ? targetPictureBox.Height : 180;
+                        int boxW = Math.Max(20, webcamTargetW);
+                        int boxH = Math.Max(20, webcamTargetH);
                         Bitmap frameForUi = FitImageCover(raw, boxW, boxH) ?? (Bitmap)raw.Clone();
 
                         lock (frameLock)
@@ -385,6 +393,12 @@ namespace PocketLog.Client
                 Cursor = Cursors.Hand
             };
             AttachEdgeResizeRedirector(picPreview);
+            picPreview.SizeChanged += (s, e) =>
+            {
+                if (picPreview.IsDisposed) return;
+                webcamTargetW = picPreview.Width > 20 ? picPreview.Width : 320;
+                webcamTargetH = picPreview.Height > 20 ? picPreview.Height : 180;
+            };
 
             const int dockHeight = 84;
             var pnlCameraDock = new CameraBottomDockPanel(this, picPreview, viewfinderBg)
@@ -484,6 +498,8 @@ namespace PocketLog.Client
                 if (pnlViewfinder.IsDisposed || picPreview.IsDisposed) return;
                 int pw = picPreview.ClientSize.Width;
                 int ph = picPreview.ClientSize.Height;
+                webcamTargetW = pw > 20 ? pw : 320;
+                webcamTargetH = ph > 20 ? ph : 180;
                 if (pw <= 40 || ph <= 120) return;
                 btnSwitchCam.Left = Math.Max(120, pw - swCamW - 11);
                 int freeTop = 52;
@@ -1159,35 +1175,55 @@ namespace PocketLog.Client
                 relayoutingCamera = true;
                 try
                 {
-                    int innerW = Math.Max(200, curW - 8);
-                    int curY = 8;
-
-                    badgeLiveTop.SetBounds(4, curY, innerW, 34);
-                    curY += badgeLiveTop.Height + 8;
-
-                    int vfH = Math.Clamp(innerW, 290, 380);
-                    pnlViewfinder.SetBounds(0, curY, curW, vfH);
-                    LayoutViewfinderOverlays();
-                    LayoutCameraDock();
-                    curY += pnlViewfinder.Height + 10;
-
-                    catHeader.SetBounds(4, curY, innerW, 34);
-                    LayoutCatHeader();
-                    curY += catHeader.Height + 4;
-
-                    catGrid.SetBounds(4, curY, innerW, 86);
-                    curY += catGrid.Height + 8;
-
-                    pnlNoteCard.SetBounds(0, curY, curW, noteCardHeight);
-                    LayoutNoteCard();
-                    curY += pnlNoteCard.Height + 10;
-
-                    btnPostPhoto.SetBounds(4, curY, innerW, 52);
-
-                    int targetColH = btnPostPhoto.Bottom + 14;
-                    if (col.Height != targetColH)
+                    col.SuspendLayout();
+                    try
                     {
-                        col.Height = targetColH;
+                        int innerW = Math.Max(200, curW - 8);
+                        int curY = 8;
+
+                        badgeLiveTop.SetBounds(4, curY, innerW, 34);
+                        curY += badgeLiveTop.Height + 8;
+
+                        int vfH = Math.Clamp(innerW, 290, 380);
+                        bool vfSizeChanged = pnlViewfinder.Width != curW || pnlViewfinder.Height != vfH;
+                        pnlViewfinder.SetBounds(0, curY, curW, vfH);
+                        if (!vfSizeChanged)
+                        {
+                            LayoutViewfinderOverlays();
+                            LayoutCameraDock();
+                        }
+                        curY += pnlViewfinder.Height + 10;
+
+                        bool catSizeChanged = catHeader.Width != innerW || catHeader.Height != 34;
+                        catHeader.SetBounds(4, curY, innerW, 34);
+                        if (!catSizeChanged)
+                        {
+                            LayoutCatHeader();
+                        }
+                        curY += catHeader.Height + 4;
+
+                        catGrid.SetBounds(4, curY, innerW, 86);
+                        curY += catGrid.Height + 8;
+
+                        bool noteSizeChanged = pnlNoteCard.Width != curW || pnlNoteCard.Height != noteCardHeight;
+                        pnlNoteCard.SetBounds(0, curY, curW, noteCardHeight);
+                        if (!noteSizeChanged)
+                        {
+                            LayoutNoteCard();
+                        }
+                        curY += pnlNoteCard.Height + 10;
+
+                        btnPostPhoto.SetBounds(4, curY, innerW, 52);
+
+                        int targetColH = btnPostPhoto.Bottom + 14;
+                        if (col.Height != targetColH)
+                        {
+                            col.Height = targetColH;
+                        }
+                    }
+                    finally
+                    {
+                        col.ResumeLayout(false);
                     }
                     (page as AndroidOverlayScrollPanel)?.SyncLayout();
                 }

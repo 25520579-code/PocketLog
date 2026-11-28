@@ -110,9 +110,9 @@ namespace PocketLog.Client
             drawerTimer = new System.Windows.Forms.Timer { Interval = 12 };
             drawerTimer.Tick += (s, e) =>
             {
-                if (IsDisposed || pnlDrawerBackdrop == null || pnlDrawerBackdrop.IsDisposed || pnlFriendsDrawer == null || pnlFriendsDrawer.IsDisposed)
+                if (IsDisposed || drawerTimer == null || pnlDrawerBackdrop == null || pnlDrawerBackdrop.IsDisposed || pnlFriendsDrawer == null || pnlFriendsDrawer.IsDisposed)
                 {
-                    drawerTimer.Stop();
+                    drawerTimer?.Stop();
                     return;
                 }
                 int cur = pnlFriendsDrawer.Left;
@@ -137,10 +137,24 @@ namespace PocketLog.Client
                     pnlDrawerBackdrop.Invalidate();
                 }
             };
+
+            EventHandler disposeDrawerTimer = null;
+            disposeDrawerTimer = (s, e) =>
+            {
+                this.Disposed -= disposeDrawerTimer;
+                if (drawerTimer != null)
+                {
+                    try { drawerTimer.Stop(); } catch { }
+                    try { drawerTimer.Dispose(); } catch { }
+                    drawerTimer = null;
+                }
+            };
+            this.Disposed += disposeDrawerTimer;
         }
 
         private void OpenFriendsDrawer()
         {
+            if (IsDisposed || drawerTimer == null) return;
             friendDrawerFeedback = "";
             currentFriendsSearchKeyword = "";
             if (currentUserId > 0)
@@ -166,6 +180,7 @@ namespace PocketLog.Client
 
         private void CloseFriendsDrawer()
         {
+            if (IsDisposed || drawerTimer == null) return;
             drawerTargetX = pnlDrawerBackdrop.Width;
             drawerTimer.Start();
         }
@@ -236,60 +251,68 @@ namespace PocketLog.Client
                 listScroll.SyncLayout();
                 int rowW = Math.Max(220, listScroll.ContentHost.Width);
                 int labelW = Math.Max(180, rowW - 8);
-                var prevRows = listScroll.ContentHost.Controls.Cast<Control>().ToList();
-                listScroll.ContentHost.Controls.Clear();
-                foreach (var pr in prevRows) { try { pr.Dispose(); } catch { } }
-                string q = (kw ?? "").Trim().ToLower();
-                int y = 4;
-
-                var filteredFriends = myFriends
-                    .Where(f => string.IsNullOrEmpty(q) || f.Name.ToLower().Contains(q) || f.Handle.ToLower().Contains(q))
-                    .ToList();
-
-                listScroll.ContentHost.Controls.Add(MakeLabel($"Đã kết nối ({filteredFriends.Count})", 4, y, 8.8F, FontStyle.Bold, accentText, labelW));
-                y += 28;
-
-                if (filteredFriends.Count == 0)
+                listScroll.ContentHost.SuspendLayout();
+                try
                 {
-                    listScroll.ContentHost.Controls.Add(MakeLabel("Chưa có bạn bè phù hợp. Bạn có thể chọn nhanh bên dưới.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, labelW, lines: 2));
-                    y += 44;
-                }
-                else
-                {
-                    foreach (var fUser in filteredFriends)
+                    var prevRows = listScroll.ContentHost.Controls.Cast<Control>().ToList();
+                    listScroll.ContentHost.Controls.Clear();
+                    foreach (var pr in prevRows) { try { pr.Dispose(); } catch { } }
+                    string q = (kw ?? "").Trim().ToLower();
+                    int y = 4;
+
+                    var filteredFriends = myFriends
+                        .Where(f => string.IsNullOrEmpty(q) || f.Name.ToLower().Contains(q) || f.Handle.ToLower().Contains(q))
+                        .ToList();
+
+                    listScroll.ContentHost.Controls.Add(MakeLabel($"Đã kết nối ({filteredFriends.Count})", 4, y, 8.8F, FontStyle.Bold, accentText, labelW));
+                    y += 28;
+
+                    if (filteredFriends.Count == 0)
                     {
-                        var card = BuildFriendItemRow(fUser, rowW, true);
-                        card.Location = new Point(0, y);
-                        listScroll.ContentHost.Controls.Add(card);
-                        y += 82;
+                        listScroll.ContentHost.Controls.Add(MakeLabel("Chưa có bạn bè phù hợp. Bạn có thể chọn nhanh bên dưới.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, labelW, lines: 2));
+                        y += 44;
                     }
-                }
-
-                y += 10;
-                var filteredSuggestions = friendSuggestions
-                    .Where(s => string.IsNullOrEmpty(q) || s.Name.ToLower().Contains(q) || s.Handle.ToLower().Contains(q))
-                    .ToList();
-
-                listScroll.ContentHost.Controls.Add(MakeLabel($"Gợi ý kết bạn trên hệ thống ({filteredSuggestions.Count})", 4, y, 8.8F, FontStyle.Bold, clrIndigo, labelW));
-                y += 28;
-
-                if (filteredSuggestions.Count == 0)
-                {
-                    listScroll.ContentHost.Controls.Add(MakeLabel("Không còn người dùng mới nào để gợi ý.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, labelW));
-                    y += 34;
-                }
-                else
-                {
-                    foreach (var sUser in filteredSuggestions)
+                    else
                     {
-                        var card = BuildFriendItemRow(sUser, rowW, false);
-                        card.Location = new Point(0, y);
-                        listScroll.ContentHost.Controls.Add(card);
-                        y += 82;
+                        foreach (var fUser in filteredFriends)
+                        {
+                            var card = BuildFriendItemRow(fUser, rowW, true);
+                            card.Location = new Point(0, y);
+                            listScroll.ContentHost.Controls.Add(card);
+                            y += 82;
+                        }
                     }
-                }
 
-                listScroll.ContentHost.Height = y + 20;
+                    y += 10;
+                    var filteredSuggestions = friendSuggestions
+                        .Where(s => string.IsNullOrEmpty(q) || s.Name.ToLower().Contains(q) || s.Handle.ToLower().Contains(q))
+                        .ToList();
+
+                    listScroll.ContentHost.Controls.Add(MakeLabel($"Gợi ý kết bạn trên hệ thống ({filteredSuggestions.Count})", 4, y, 8.8F, FontStyle.Bold, clrIndigo, labelW));
+                    y += 28;
+
+                    if (filteredSuggestions.Count == 0)
+                    {
+                        listScroll.ContentHost.Controls.Add(MakeLabel("Không còn người dùng mới nào để gợi ý.", 4, y, 8.2F, FontStyle.Regular, clrTextMuted, labelW));
+                        y += 34;
+                    }
+                    else
+                    {
+                        foreach (var sUser in filteredSuggestions)
+                        {
+                            var card = BuildFriendItemRow(sUser, rowW, false);
+                            card.Location = new Point(0, y);
+                            listScroll.ContentHost.Controls.Add(card);
+                            y += 82;
+                        }
+                    }
+
+                    listScroll.ContentHost.Height = y + 20;
+                }
+                finally
+                {
+                    listScroll.ContentHost.ResumeLayout(false);
+                }
                 listScroll.SyncLayout();
                 listScroll.SetScrollOffset(0, animate: false);
             };

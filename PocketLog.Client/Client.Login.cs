@@ -55,6 +55,8 @@ namespace PocketLog.Client
                 if (Width <= 10 || Height <= 10) return;
                 Graphics g = e.Graphics;
                 Rectangle inner = InnerHeroBounds;
+                bool dark = owner != null && owner.isDarkMode;
+                AppPalette p = owner?.CurrentTheme ?? LightPalette;
 
                 PaintElevatedCardSurface(
                     g,
@@ -64,13 +66,12 @@ namespace PocketLog.Client
                     Color.Transparent,
                     0,
                     elevationLevel: 2,
-                    isDarkMode: owner.isDarkMode);
+                    isDarkMode: dark);
 
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
-                AppPalette p = owner.CurrentTheme;
                 var rect = new RectangleF(inner.X + 0.5f, inner.Y + 0.5f, Math.Max(2f, inner.Width - 1f), Math.Max(2f, inner.Height - 1f));
                 using GraphicsPath path = CreateRoundedPath(rect.X, rect.Y, rect.Width, rect.Height, 26f);
 
@@ -103,14 +104,17 @@ namespace PocketLog.Client
                         g.FillPath(badgeFill, badgePath);
                         g.DrawPath(badgeBorder, badgePath);
 
-                        int icoSz = Math.Max(18, (int)(badgeBounds.Width * 0.52f));
-                        using Bitmap brandIco = owner.CreateVectorIcon(UiIcon.Brand, Color.White, icoSz);
-                        g.DrawImage(
-                            brandIco,
-                            badgeBounds.X + (badgeBounds.Width - icoSz) / 2,
-                            badgeBounds.Y + (badgeBounds.Height - icoSz) / 2,
-                            icoSz,
-                            icoSz);
+                        if (owner != null)
+                        {
+                            int icoSz = Math.Max(18, (int)(badgeBounds.Width * 0.52f));
+                            using Bitmap brandIco = owner.CreateVectorIcon(UiIcon.Brand, Color.White, icoSz);
+                            g.DrawImage(
+                                brandIco,
+                                badgeBounds.X + (badgeBounds.Width - icoSz) / 2,
+                                badgeBounds.Y + (badgeBounds.Height - icoSz) / 2,
+                                icoSz,
+                                icoSz);
+                        }
                     }
 
                     if (cloudChipBounds.Width > 16 && cloudChipBounds.Height > 8)
@@ -129,7 +133,7 @@ namespace PocketLog.Client
                     using (var topSheenBrush = new LinearGradientBrush(
                         new PointF(rect.X, rect.Y + 1f),
                         new PointF(rect.X, rect.Y + 1f + topBandH),
-                        Color.FromArgb(owner.isDarkMode ? 76 : 96, 255, 255, 255),
+                        Color.FromArgb(dark ? 76 : 96, 255, 255, 255),
                         Color.FromArgb(0, 255, 255, 255)))
                     using (var topSheenPen = new Pen(topSheenBrush, 1f))
                     {
@@ -141,7 +145,7 @@ namespace PocketLog.Client
                     g.Restore(gState);
                 }
 
-                using (var sheenPen = new Pen(Color.FromArgb(owner.isDarkMode ? 44 : 52, 255, 255, 255), 1f))
+                using (var sheenPen = new Pen(Color.FromArgb(dark ? 44 : 52, 255, 255, 255), 1f))
                 {
                     g.DrawPath(sheenPen, path);
                 }
