@@ -1488,8 +1488,16 @@ namespace PocketLog.Client
 
         public class StoryAvatarStrip : Control
         {
-            private const int SlotWidth = 72;
-            private const int PadX = 10;
+            private const int SlotWidth = 76;
+            private const int PadX = 12;
+            private const TextFormatFlags StoryNameFlags =
+                TextFormatFlags.HorizontalCenter |
+                TextFormatFlags.Top |
+                TextFormatFlags.EndEllipsis |
+                TextFormatFlags.NoPadding |
+                TextFormatFlags.SingleLine |
+                TextFormatFlags.NoPrefix |
+                TextFormatFlags.PreserveGraphicsClipping;
 
             private static readonly Color[] AvatarTints =
             {
@@ -1513,6 +1521,13 @@ namespace PocketLog.Client
 
             public IReadOnlyList<FriendUser> SortedFriends => sortedFriends;
             public int ScrollOffsetX => scrollOffsetX;
+            public Rectangle InnerCardBounds => new Rectangle(
+                4,
+                2,
+                Math.Max(4, ClientSize.Width - 8),
+                Math.Max(4, ClientSize.Height - 8));
+
+            public static string FormatStoryDisplayName(string fullName) => GetShortVietnameseName(fullName);
 
             public StoryAvatarStrip(Client owner, List<FriendUser> friends, int suggestionsCount, Action onOpenFriendsDrawer)
             {
@@ -1532,11 +1547,10 @@ namespace PocketLog.Client
                     ControlStyles.AllPaintingInWmPaint |
                     ControlStyles.UserPaint |
                     ControlStyles.OptimizedDoubleBuffer |
-                    ControlStyles.ResizeRedraw |
-                    ControlStyles.SupportsTransparentBackColor,
+                    ControlStyles.ResizeRedraw,
                     true);
                 DoubleBuffered = true;
-                BackColor = Color.Transparent;
+                BackColor = owner != null ? owner.clrAppBg : Color.FromArgb(244, 246, 251);
                 Height = 96;
                 Cursor = Cursors.Hand;
                 owner?.AttachEdgeResizeRedirector(this);
@@ -1640,17 +1654,31 @@ namespace PocketLog.Client
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
                 AppPalette p = owner?.CurrentTheme ?? LightPalette;
-                var bgRect = new RectangleF(0.5f, 0.5f, Width - 1f, Height - 1f);
-                using (GraphicsPath bgPath = CreateRoundedPath(bgRect.X, bgRect.Y, bgRect.Width, bgRect.Height, 20f))
-                using (var bgBrush = new SolidBrush(p.CardBg))
-                using (var borderPen = new Pen(p.BorderLight, 1f))
+                bool dark = owner != null && owner.isDarkMode;
+                Color backdrop = owner != null ? owner.clrAppBg : (BackColor.A == 255 ? BackColor : p.AppBg);
+                using (var bgFill = new SolidBrush(backdrop))
                 {
-                    g.FillPath(bgBrush, bgPath);
-                    g.DrawPath(borderPen, bgPath);
+                    g.FillRectangle(bgFill, ClientRectangle);
                 }
 
+                Rectangle inner = InnerCardBounds;
+                PaintElevatedCardSurface(
+                    g,
+                    inner,
+                    cornerRadius: 20,
+                    fillColor: p.CardBg,
+                    borderColor: p.BorderLight,
+                    borderThickness: 1,
+                    elevationLevel: 1,
+                    isDarkMode: dark);
+
                 GraphicsState state = g.Save();
-                using (GraphicsPath innerClip = CreateRoundedPath(4f, 2f, Math.Max(4f, Width - 8f), Math.Max(4f, Height - 4f), 17f))
+                using (GraphicsPath innerClip = CreateRoundedPath(
+                    inner.X + 2f,
+                    inner.Y + 1f,
+                    Math.Max(4f, inner.Width - 4f),
+                    Math.Max(4f, inner.Height - 2f),
+                    18f))
                 {
                     g.SetClip(innerClip);
 
@@ -1661,12 +1689,6 @@ namespace PocketLog.Client
                     using Font nameOnlineFont = owner != null ? owner.FontMedium(7.9F) : new Font("Segoe UI", 7.9F, FontStyle.Bold);
                     using Font nameMutedFont = owner != null ? owner.FontRegular(7.9F) : new Font("Segoe UI", 7.9F, FontStyle.Regular);
                     using Font badgeFont = owner != null ? owner.FontBold(6.8F) : new Font("Segoe UI", 6.8F, FontStyle.Bold);
-                    using var nameFmt = new StringFormat(StringFormatFlags.NoWrap)
-                    {
-                        Alignment = StringAlignment.Center,
-                        LineAlignment = StringAlignment.Near,
-                        Trimming = StringTrimming.EllipsisCharacter
-                    };
                     using var centerFmt = new StringFormat
                     {
                         Alignment = StringAlignment.Center,
@@ -1676,23 +1698,23 @@ namespace PocketLog.Client
                     for (int i = 0; i < totalSlots; i++)
                     {
                         float sx = PadX + i * SlotWidth - scrollOffsetX;
-                        if (sx + SlotWidth < 0 || sx > Width) continue;
+                        if (sx + SlotWidth < inner.Left || sx > inner.Right) continue;
 
                         if (hoveredSlot == i)
                         {
-                            using GraphicsPath hPath = CreateRoundedPath(sx + 2f, 4f, SlotWidth - 4f, Height - 8f, 14f);
+                            using GraphicsPath hPath = CreateRoundedPath(sx + 2f, inner.Y + 3f, SlotWidth - 4f, inner.Height - 6f, 14f);
                             using var hBrush = new SolidBrush(p.SoftAccentBg);
                             g.FillPath(hBrush, hPath);
                         }
 
                         if (i == 0)
                         {
-                            PaintAddFriendSlot(g, sx, p, nameOnlineFont, badgeFont, nameFmt, centerFmt);
+                            PaintAddFriendSlot(g, sx, inner.Y, p, nameOnlineFont, badgeFont, centerFmt);
                         }
                         else
                         {
                             FriendUser friend = sortedFriends[i - 1];
-                            PaintFriendSlot(g, sx, friend, p, initialFont, nameOnlineFont, nameMutedFont, nameFmt, centerFmt);
+                            PaintFriendSlot(g, sx, inner.Y, friend, p, initialFont, nameOnlineFont, nameMutedFont, centerFmt);
                         }
                     }
                 }
@@ -1702,14 +1724,16 @@ namespace PocketLog.Client
             private void PaintAddFriendSlot(
                 Graphics g,
                 float sx,
+                int innerTop,
                 AppPalette p,
                 Font labelFont,
                 Font badgeFont,
-                StringFormat nameFmt,
                 StringFormat centerFmt)
             {
                 Color accentInk = (owner != null && owner.isDarkMode) ? p.AccentSecondary : p.AccentPrimary;
-                var circleRect = new RectangleF(sx + 12f, 10f, 48f, 48f);
+                float avatarX = sx + (SlotWidth - 48f) / 2f;
+                float avatarY = innerTop + 7f;
+                var circleRect = new RectangleF(avatarX, avatarY, 48f, 48f);
                 using (var fill = new SolidBrush(p.SoftAccentBg))
                 using (var dashedPen = new Pen(accentInk, 2f) { DashStyle = DashStyle.Dash })
                 {
@@ -1746,23 +1770,25 @@ namespace PocketLog.Client
                     g.DrawString(countText, badgeFont, Brushes.White, new RectangleF(bx, by, bw, bh), centerFmt);
                 }
 
-                using var textBrush = new SolidBrush(accentInk);
-                g.DrawString("+ Kết bạn", labelFont, textBrush, new RectangleF(sx + 2f, 65f, SlotWidth - 4f, 22f), nameFmt);
+                var labelRect = new Rectangle((int)Math.Round(sx + 2f), innerTop + 62, SlotWidth - 4, 22);
+                TextRenderer.DrawText(g, "+ Kết bạn", labelFont, labelRect, accentInk, StoryNameFlags);
             }
 
             private void PaintFriendSlot(
                 Graphics g,
                 float sx,
+                int innerTop,
                 FriendUser friend,
                 AppPalette p,
                 Font initialFont,
                 Font nameOnlineFont,
                 Font nameMutedFont,
-                StringFormat nameFmt,
                 StringFormat centerFmt)
             {
-                var ringRect = new RectangleF(sx + 8.5f, 6.5f, 55f, 55f);
-                var avatarRect = new RectangleF(sx + 12f, 10f, 48f, 48f);
+                float avatarX = sx + (SlotWidth - 48f) / 2f;
+                float avatarY = innerTop + 7f;
+                var ringRect = new RectangleF(avatarX - 3.5f, avatarY - 3.5f, 55f, 55f);
+                var avatarRect = new RectangleF(avatarX, avatarY, 48f, 48f);
 
                 if (friend.IsOnline)
                 {
@@ -1806,14 +1832,16 @@ namespace PocketLog.Client
                     g.FillEllipse(dotBrush, dotRect);
                 }
 
-                string displayName = string.IsNullOrEmpty(cleanName) ? "Bạn bè" : cleanName;
-                using var nameBrush = new SolidBrush(friend.IsOnline ? p.TextMain : p.TextMuted);
-                g.DrawString(
+                string displayName = FormatStoryDisplayName(cleanName);
+                if (string.IsNullOrEmpty(displayName)) displayName = "Bạn bè";
+                var nameRect = new Rectangle((int)Math.Round(sx + 2f), innerTop + 62, SlotWidth - 4, 22);
+                TextRenderer.DrawText(
+                    g,
                     displayName,
                     friend.IsOnline ? nameOnlineFont : nameMutedFont,
-                    nameBrush,
-                    new RectangleF(sx + 2f, 65f, SlotWidth - 4f, 22f),
-                    nameFmt);
+                    nameRect,
+                    friend.IsOnline ? p.TextMain : p.TextMuted,
+                    StoryNameFlags);
             }
         }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
@@ -42,12 +43,18 @@ namespace PocketLog.Client
         {
             Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
             Panel page = CreateResponsiveScrollPage(out Panel col);
+            ToolTip feedLikeTip = new ToolTip();
+            page.Disposed += (s, e) =>
+            {
+                try { feedLikeTip.Dispose(); } catch { }
+            };
+
             int w = col.Width;
-            int y = 14;
+            var stackItems = new List<(Control Ctrl, int BottomGap, Action UpdateLayout)>();
 
             Panel topBar = new Panel
             {
-                Location = new Point(0, y),
+                Location = new Point(0, 14),
                 Size = new Size(w, 42),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent
@@ -59,7 +66,7 @@ namespace PocketLog.Client
             string frText = $"Bạn bè ({myFriends.Count})";
 
             int frBtnW = Math.Max(114, MeasurePillBtnWidth(frText, 8.2F, 18, true, 15));
-            var btnFriendsTop = MakeBtn(frText, w - frBtnW, 3, frBtnW, 36, 18, clrCardBg, clrIndigo, clrBorderLight, 1, 8.2F);
+            var btnFriendsTop = MakeBtn(frText, w - frBtnW - 4, 3, frBtnW, 36, 18, clrCardBg, clrIndigo, clrBorderLight, 1, 8.2F);
             btnFriendsTop.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnFriendsTop.HoverState.FillColor = clrSoftGreenBg;
             btnFriendsTop.HoverState.BorderColor = clrSoftGreenBorder;
@@ -69,7 +76,7 @@ namespace PocketLog.Client
             btnFriendsTop.Click += (s, e) => OpenFriendsDrawer();
 
             int galBtnW = Math.Max(104, MeasurePillBtnWidth(galText, 8.2F, 18, true, 15));
-            var btnGallery = MakeBtn(galText, w - frBtnW - 6 - galBtnW, 3, galBtnW, 36, 18, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
+            var btnGallery = MakeBtn(galText, w - frBtnW - 4 - 6 - galBtnW, 3, galBtnW, 36, 18, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
             btnGallery.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnGallery.HoverState.FillColor = clrCardBg;
             btnGallery.HoverState.BorderColor = clrPrimaryGreen;
@@ -78,7 +85,7 @@ namespace PocketLog.Client
             AttachEdgeResizeRedirector(btnGallery);
             btnGallery.Click += (s, e) => OpenMyGalleryScreen();
 
-            var lblTitle = MakeLabel("Bảng tin", 2, 5, 12.2F, FontStyle.Bold, clrTextMain, Math.Max(70, btnGallery.Left - 8));
+            var lblTitle = MakeLabel("Bảng tin", 4, 5, 12.2F, FontStyle.Bold, clrTextMain, Math.Max(70, btnGallery.Left - 10));
             SetControlFont(lblTitle, FontBold(12.2F));
             lblTitle.Height = TextRenderer.MeasureText("Ág", lblTitle.Font).Height + 4;
             lblTitle.Top = Math.Max(2, (42 - lblTitle.Height) / 2);
@@ -89,9 +96,9 @@ namespace PocketLog.Client
                 if (topBar.IsDisposed) return;
                 int tw = topBar.Width;
                 int btnGap = tw < 440 ? 6 : 8;
-                btnFriendsTop.SetBounds(tw - frBtnW, 3, frBtnW, 36);
-                btnGallery.SetBounds(btnFriendsTop.Left - btnGap - galBtnW, 3, galBtnW, 36);
-                lblTitle.Width = Math.Max(60, btnGallery.Left - 8);
+                btnFriendsTop.SetBounds(Math.Max(0, tw - 4 - frBtnW), 3, frBtnW, 36);
+                btnGallery.SetBounds(Math.Max(0, btnFriendsTop.Left - btnGap - galBtnW), 3, galBtnW, 36);
+                lblTitle.SetBounds(4, lblTitle.Top, Math.Max(60, btnGallery.Left - 12), lblTitle.Height);
             }
 
             topBar.Controls.Add(lblTitle);
@@ -100,24 +107,23 @@ namespace PocketLog.Client
             topBar.Resize += (s, e) => LayoutTopBar();
             LayoutTopBar();
             col.Controls.Add(topBar);
-            y += 50;
+            stackItems.Add((topBar, 8, LayoutTopBar));
 
             var storyStrip = new StoryAvatarStrip(this, myFriends, friendSuggestions.Count, OpenFriendsDrawer)
             {
-                Location = new Point(0, y),
+                Location = new Point(0, 64),
                 Size = new Size(w, 96),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
             };
             col.Controls.Add(storyStrip);
-            y += storyStrip.Height + 14;
+            stackItems.Add((storyStrip, 12, null));
 
             LocketPost latestMine = posts.FirstOrDefault(p => p.IsMine);
             if (latestMine != null)
             {
-                var hero = CreateLocketPostCard(latestMine, true, w);
-                hero.Location = new Point(0, y);
+                var hero = CreateLocketPostCard(latestMine, true, w, feedLikeTip, out Action updateHero);
                 col.Controls.Add(hero);
-                y += hero.Height + 16;
+                stackItems.Add((hero, 14, updateHero));
             }
             else
             {
@@ -130,14 +136,12 @@ namespace PocketLog.Client
                     clrSoftGreenBorder,
                     accentText,
                     () => EnsureTabVisible("CAMERA"));
-                emptyMine.Location = new Point(0, y);
                 col.Controls.Add(emptyMine);
-                y += emptyMine.Height + 14;
+                stackItems.Add((emptyMine, 12, null));
             }
 
             Panel secHeader = new Panel
             {
-                Location = new Point(0, y),
                 Size = new Size(w, 34),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.Transparent
@@ -166,7 +170,7 @@ namespace PocketLog.Client
             secHeader.Controls.Add(lineSec);
             LayoutSecDivider();
             col.Controls.Add(secHeader);
-            y += 40;
+            stackItems.Add((secHeader, 6, LayoutSecDivider));
 
             var friendPosts = posts.Where(p => !p.IsMine).ToList();
             if (friendPosts.Count == 0)
@@ -180,46 +184,128 @@ namespace PocketLog.Client
                     clrBorderLight,
                     clrTextMain,
                     OpenFriendsDrawer);
-                noFriendPostBox.Location = new Point(0, y);
                 col.Controls.Add(noFriendPostBox);
-                y += noFriendPostBox.Height + 14;
+                stackItems.Add((noFriendPostBox, 12, null));
             }
             else
             {
                 foreach (var fp in friendPosts)
                 {
-                    var card = CreateLocketPostCard(fp, false, w);
-                    card.Location = new Point(0, y);
+                    var card = CreateLocketPostCard(fp, false, w, feedLikeTip, out Action updateCard);
                     col.Controls.Add(card);
-                    y += card.Height + 16;
+                    stackItems.Add((card, 14, updateCard));
                 }
             }
 
-            col.Height = y + 20;
+            bool relayoutingFeed = false;
+            void RelayoutFeedStack()
+            {
+                if (relayoutingFeed || col.IsDisposed || page.IsDisposed) return;
+                int curW = col.Width;
+                if (curW < 100) return;
+
+                relayoutingFeed = true;
+                try
+                {
+                    int curY = 14;
+                    foreach (var item in stackItems)
+                    {
+                        if (item.Ctrl == null || item.Ctrl.IsDisposed) continue;
+                        if (item.Ctrl.Width != curW)
+                        {
+                            item.Ctrl.Width = curW;
+                        }
+                        item.UpdateLayout?.Invoke();
+                        if (item.Ctrl.Left != 0 || item.Ctrl.Top != curY)
+                        {
+                            item.Ctrl.Location = new Point(0, curY);
+                        }
+                        curY += item.Ctrl.Height + item.BottomGap;
+                    }
+
+                    int targetColH = curY + 20;
+                    if (col.Height != targetColH)
+                    {
+                        col.Height = targetColH;
+                    }
+                    (page as AndroidOverlayScrollPanel)?.SyncLayout();
+                }
+                finally
+                {
+                    relayoutingFeed = false;
+                }
+            }
+
+            col.Resize += (s, e) => RelayoutFeedStack();
+            RelayoutFeedStack();
             return page;
         }
 
-        private Guna2Panel CreateLocketPostCard(LocketPost post, bool isMyTopCard, int cardWidth)
+        private TaggedDebtItem FindMatchingSplitDebt(LocketPost post)
         {
-            AppPalette theme = CurrentTheme;
-            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
-            Guna2Panel card = new Guna2Panel
+            if (post == null || taggedDebts == null || taggedDebts.Count == 0) return null;
+
+            if (post.PostId > 0)
             {
-                Size = new Size(cardWidth, 474),
+                TaggedDebtItem unpaidByPost = taggedDebts.FirstOrDefault(d => d != null && d.PostId == post.PostId && !d.IsConfirmedPaid);
+                if (unpaidByPost != null) return unpaidByPost;
+
+                TaggedDebtItem anyByPost = taggedDebts.FirstOrDefault(d => d != null && d.PostId == post.PostId);
+                if (anyByPost != null) return anyByPost;
+            }
+
+            string note = (post.NoteTop ?? "").Trim();
+            if (!string.IsNullOrEmpty(note))
+            {
+                TaggedDebtItem unpaidByTitle = taggedDebts.FirstOrDefault(d =>
+                    d != null &&
+                    !d.IsConfirmedPaid &&
+                    string.Equals((d.Title ?? "").Trim(), note, StringComparison.OrdinalIgnoreCase) &&
+                    (post.Amount <= 0 || d.TotalAmount == post.Amount));
+                if (unpaidByTitle != null) return unpaidByTitle;
+
+                TaggedDebtItem anyByTitle = taggedDebts.FirstOrDefault(d =>
+                    d != null &&
+                    string.Equals((d.Title ?? "").Trim(), note, StringComparison.OrdinalIgnoreCase) &&
+                    (post.Amount <= 0 || d.TotalAmount == post.Amount));
+                if (anyByTitle != null) return anyByTitle;
+            }
+
+            if (post.Amount > 0)
+            {
+                TaggedDebtItem unpaidByAmount = taggedDebts.FirstOrDefault(d =>
+                    d != null &&
+                    !d.IsConfirmedPaid &&
+                    d.TotalAmount == post.Amount &&
+                    (string.IsNullOrEmpty(post.Category) || string.Equals(d.Category, post.Category, StringComparison.OrdinalIgnoreCase)));
+                if (unpaidByAmount != null) return unpaidByAmount;
+            }
+
+            return null;
+        }
+
+        private ElevatedCardPanel CreateLocketPostCard(LocketPost post, bool isMyTopCard, int cardWidth, ToolTip likeTip, out Action relayoutCard)
+        {
+            Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
+            var card = new ElevatedCardPanel(this)
+            {
+                Size = new Size(cardWidth, 496),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 28,
-                FillColor = clrCardBg,
-                BorderColor = isMyTopCard ? clrSoftGreenBorder : clrBorderLight,
-                BorderThickness = 1,
-                UseTransparentBackground = true,
+                CornerRadius = 28,
+                ElevationLevel = 2,
+                CardFillColor = clrCardBg,
+                CardBorderColor = isMyTopCard ? clrSoftGreenBorder : clrBorderLight,
+                CardBorderThickness = 1,
+                BackColor = clrAppBg,
                 Cursor = isMyTopCard ? Cursors.Hand : Cursors.Default
             };
-            AttachEdgeResizeRedirector(card);
 
+            Rectangle initInner = card.InnerCardBounds;
             FriendUser matchedFriend = FindAuthorFriend(post);
             bool isAuthorOnline = matchedFriend != null && matchedFriend.IsOnline;
 
             Control avatarHost = BuildMiniAuthorAvatar(post, matchedFriend, isMyTopCard, isAuthorOnline);
+            avatarHost.Location = new Point(initInner.X + 12, initInner.Y + 12);
 
             Guna2Panel timePill = null;
             Label lblTime = null;
@@ -233,9 +319,8 @@ namespace PocketLog.Client
 
                 timePill = new Guna2Panel
                 {
-                    Location = new Point(Math.Max(140, cardWidth - 14 - timeW), 14),
+                    Location = new Point(Math.Max(initInner.X + 140, initInner.Right - 14 - timeW), initInner.Y + 14),
                     Size = new Size(timeW, timeH),
-                    Anchor = AnchorStyles.Top | AnchorStyles.Right,
                     BorderRadius = timeH / 2,
                     FillColor = isMyTopCard ? clrSoftGreenBg : clrInputBg,
                     BorderColor = isMyTopCard ? clrSoftGreenBorder : clrBorderLight,
@@ -262,11 +347,11 @@ namespace PocketLog.Client
             }
 
             string authorName = string.IsNullOrWhiteSpace(post.Author) ? "Người dùng PocketLog" : post.Author.Trim();
+            int authorLeft = initInner.X + 66;
             int initAuthorW = timePill != null
-                ? Math.Max(90, timePill.Left - 66 - 8)
-                : Math.Max(120, cardWidth - 80);
-            var lblAuthor = MakeLabel(authorName, 66, 11, 10F, FontStyle.Bold, clrTextMain, initAuthorW);
-            lblAuthor.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                ? Math.Max(80, timePill.Left - authorLeft - 8)
+                : Math.Max(120, initInner.Right - authorLeft - 14);
+            var lblAuthor = MakeLabel(authorName, authorLeft, initInner.Y + 11, 10F, FontStyle.Bold, clrTextMain, initAuthorW);
 
             string subText = BuildPostHeaderSubtitle(post, isMyTopCard);
             int subY = timePill != null
@@ -274,51 +359,248 @@ namespace PocketLog.Client
                 : lblAuthor.Bottom - 1;
             var lblSub = MakeLabel(
                 subText,
-                66,
+                authorLeft,
                 subY,
                 8.6F,
                 post.HasTag ? FontStyle.Bold : FontStyle.Regular,
                 post.HasTag ? accentText : clrTextMuted,
-                Math.Max(120, cardWidth - 80));
-            lblSub.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                Math.Max(120, initInner.Right - authorLeft - 14));
 
-            void LayoutCardHeader()
-            {
-                if (card.IsDisposed) return;
-                int cw = card.Width;
-                if (timePill != null && !timePill.IsDisposed)
-                {
-                    timePill.Left = Math.Max(140, cw - 14 - timePill.Width);
-                    lblAuthor.Width = Math.Max(80, timePill.Left - lblAuthor.Left - 8);
-                }
-                else
-                {
-                    lblAuthor.Width = Math.Max(80, cw - lblAuthor.Left - 14);
-                }
-                bool overlapsTimePillY = timePill != null && !timePill.IsDisposed &&
-                    lblSub.Top < timePill.Bottom && lblSub.Bottom > timePill.Top;
-                lblSub.Width = overlapsTimePillY
-                    ? Math.Max(80, timePill.Left - lblSub.Left - 8)
-                    : Math.Max(80, cw - lblSub.Left - 14);
-            }
-
-            int photoY = Math.Max(68, lblSub.Bottom + 6);
-            const int photoH = 390;
+            int initCanvasW = Math.Max(180, initInner.Width - 24);
+            int initCanvasH = Math.Clamp(initCanvasW, 260, 380);
+            int initPhotoY = Math.Max(initInner.Y + 66, lblSub.Bottom + 6);
             var photoCanvas = new SocialPhotoCanvas(this, post, isMyTopCard, compactThumbnail: false)
             {
-                Location = new Point(12, photoY),
-                Size = new Size(Math.Max(180, cardWidth - 24), photoH),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                Location = new Point(initInner.X + 12, initPhotoY),
+                Size = new Size(initCanvasW, initCanvasH)
             };
-            card.Height = photoY + photoH + 14;
 
-            card.Resize += (s, e) => LayoutCardHeader();
-            LayoutCardHeader();
+            // Quick Action Footer Bar (Height = 42)
+            var footer = new FeedBufferedPanel
+            {
+                Name = "pnlCardFooter",
+                Location = new Point(initInner.X + 12, photoCanvas.Bottom + 8),
+                Size = new Size(initCanvasW, 42),
+                BackColor = Color.Transparent,
+                Cursor = Cursors.Default
+            };
+            AttachEdgeResizeRedirector(footer);
+
+            bool initLiked = IsPostLiked(post.PostId);
+            var btnLike = MakeBtn(
+                initLiked ? "Đã thích" : "Thích",
+                0,
+                4,
+                Math.Max(84, MeasurePillBtnWidth(initLiked ? "Đã thích" : "Thích", 8.2F, 17, true, 15)),
+                34,
+                17,
+                clrInputBg,
+                clrIndigo,
+                clrBorderLight,
+                1,
+                8.2F);
+            btnLike.Name = "btnLike";
+            AttachEdgeResizeRedirector(btnLike);
+
+            Color likedBorderClr = isDarkMode ? Color.FromArgb(159, 18, 57) : Color.FromArgb(253, 164, 175);
+            void ApplyLikeVisual(bool liked)
+            {
+                btnLike.Text = liked ? "Đã thích" : "Thích";
+                btnLike.FillColor = liked ? clrSoftRedBg : clrInputBg;
+                btnLike.ForeColor = liked ? clrRedDanger : clrIndigo;
+                btnLike.BorderColor = liked ? likedBorderClr : clrBorderLight;
+                btnLike.HoverState.FillColor = clrSoftRedBg;
+                btnLike.HoverState.ForeColor = clrRedDanger;
+                btnLike.HoverState.BorderColor = clrRedDanger;
+                AttachBtnIcon(btnLike, liked ? UiIcon.HeartFilled : UiIcon.Heart, liked ? clrRedDanger : clrIndigo, 15);
+            }
+
+            ApplyLikeVisual(initLiked);
+            AttachControlImageDisposal(btnLike);
+            likeTip?.SetToolTip(btnLike, "Lưu yêu thích trên máy này");
+
+            Control rightFooterCtrl;
+            int rightDesiredW;
+            if (post.HasTag)
+            {
+                const string splitLabel = "Xem chia bill";
+                rightDesiredW = Math.Max(128, MeasurePillBtnWidth(splitLabel, 8.2F, 17, true, 14));
+                var btnAction = MakeBtn(splitLabel, 0, 4, rightDesiredW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
+                btnAction.Name = "btnAction";
+                btnAction.HoverState.FillColor = clrCardBg;
+                btnAction.HoverState.ForeColor = accentText;
+                btnAction.HoverState.BorderColor = clrPrimaryGreen;
+                Image oldImg = btnAction.Image;
+                btnAction.Image = CreateVectorIcon(UiIcon.ArrowRight, accentText, 14);
+                btnAction.ImageSize = new Size(14, 14);
+                btnAction.ImageAlign = HorizontalAlignment.Right;
+                btnAction.ImageOffset = new Point(4, 0);
+                btnAction.TextAlign = HorizontalAlignment.Left;
+                btnAction.TextOffset = new Point(4, 0);
+                oldImg?.Dispose();
+                AttachControlImageDisposal(btnAction);
+                AttachEdgeResizeRedirector(btnAction);
+                btnAction.Click += (s, e) =>
+                {
+                    TaggedDebtItem matched = FindMatchingSplitDebt(post);
+                    if (matched != null)
+                    {
+                        selectedSplitId = matched.SplitId;
+                        if (!matched.IsConfirmedPaid)
+                        {
+                            isUnpaidDropdownOpen = true;
+                        }
+                    }
+                    EnsureTabVisible("EXPENSE");
+                    RefreshPaneContent("EXPENSE");
+                };
+                rightFooterCtrl = btnAction;
+            }
+            else if (isMyTopCard || post.IsMine)
+            {
+                const string galleryLabel = "Mở Kho ảnh";
+                rightDesiredW = Math.Max(122, MeasurePillBtnWidth(galleryLabel, 8.2F, 17, true, 14));
+                var btnAction = MakeBtn(galleryLabel, 0, 4, rightDesiredW, 34, 17, clrSoftGreenBg, accentText, clrSoftGreenBorder, 1, 8.2F);
+                btnAction.Name = "btnAction";
+                btnAction.HoverState.FillColor = clrCardBg;
+                btnAction.HoverState.ForeColor = accentText;
+                btnAction.HoverState.BorderColor = clrPrimaryGreen;
+                Image oldImg = btnAction.Image;
+                btnAction.Image = CreateVectorIcon(UiIcon.ArrowRight, accentText, 14);
+                btnAction.ImageSize = new Size(14, 14);
+                btnAction.ImageAlign = HorizontalAlignment.Right;
+                btnAction.ImageOffset = new Point(4, 0);
+                btnAction.TextAlign = HorizontalAlignment.Left;
+                btnAction.TextOffset = new Point(4, 0);
+                oldImg?.Dispose();
+                AttachControlImageDisposal(btnAction);
+                AttachEdgeResizeRedirector(btnAction);
+                btnAction.Click += (s, e) => OpenMyGalleryScreen();
+                rightFooterCtrl = btnAction;
+            }
+            else
+            {
+                const string momentText = "Khoảnh khắc";
+                using Font chipFont = FontMedium(7.8F);
+                int chipTextW = TextRenderer.MeasureText(momentText, chipFont, new Size(200, 32), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+                rightDesiredW = Math.Max(92, chipTextW + 24);
+                var chipMoment = new Guna2Panel
+                {
+                    Name = "chipMoment",
+                    Size = new Size(rightDesiredW, 30),
+                    BorderRadius = 15,
+                    FillColor = clrInputBg,
+                    BorderColor = clrBorderLight,
+                    BorderThickness = 1,
+                    UseTransparentBackground = true
+                };
+                AttachEdgeResizeRedirector(chipMoment);
+                var lblMoment = new Label
+                {
+                    Text = momentText,
+                    Dock = DockStyle.Fill,
+                    Font = FontMedium(7.8F),
+                    ForeColor = clrTextMuted,
+                    BackColor = Color.Transparent,
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    AutoEllipsis = true,
+                    UseMnemonic = false
+                };
+                chipMoment.Controls.Add(lblMoment);
+                rightFooterCtrl = chipMoment;
+            }
+
+            void LayoutFooter()
+            {
+                if (footer.IsDisposed) return;
+                int fw = footer.Width;
+                int desiredLikeW = Math.Max(84, MeasurePillBtnWidth(btnLike.Text, 8.2F, 17, true, 15));
+                const int gap = 8;
+                int likeW = desiredLikeW;
+                int rightW = rightDesiredW;
+
+                if (likeW + gap + rightW > fw)
+                {
+                    int avail = Math.Max(80, fw - gap);
+                    likeW = Math.Min(likeW, Math.Max(72, avail / 2 - 4));
+                    rightW = Math.Max(68, avail - likeW);
+                }
+
+                btnLike.SetBounds(0, (42 - 34) / 2, likeW, 34);
+                int rightH = rightFooterCtrl.Height;
+                rightFooterCtrl.SetBounds(Math.Max(btnLike.Right + 6, fw - rightW), (42 - rightH) / 2, rightW, rightH);
+            }
+
+            btnLike.Click += (s, e) =>
+            {
+                bool nowLiked = TogglePostLiked(post.PostId);
+                ApplyLikeVisual(nowLiked);
+                LayoutFooter();
+            };
+
+            footer.Controls.Add(btnLike);
+            footer.Controls.Add(rightFooterCtrl);
+
+            bool layingOutCard = false;
+            void LayoutCardBody()
+            {
+                if (layingOutCard || card.IsDisposed) return;
+                layingOutCard = true;
+                try
+                {
+                    Rectangle r = card.InnerCardBounds;
+                    avatarHost.Location = new Point(r.X + 12, r.Y + 12);
+
+                    int aLeft = r.X + 66;
+                    if (timePill != null && !timePill.IsDisposed)
+                    {
+                        timePill.Location = new Point(Math.Max(r.X + 140, r.Right - 14 - timePill.Width), r.Y + 14);
+                        lblAuthor.SetBounds(aLeft, r.Y + 11, Math.Max(80, timePill.Left - aLeft - 8), lblAuthor.Height);
+                    }
+                    else
+                    {
+                        lblAuthor.SetBounds(aLeft, r.Y + 11, Math.Max(80, r.Right - aLeft - 14), lblAuthor.Height);
+                    }
+
+                    int subYNow = timePill != null && !timePill.IsDisposed
+                        ? Math.Max(lblAuthor.Bottom + 1, timePill.Bottom + 2)
+                        : lblAuthor.Bottom - 1;
+                    bool overlapsTimePillY = timePill != null && !timePill.IsDisposed &&
+                        subYNow < timePill.Bottom && (subYNow + lblSub.Height) > timePill.Top;
+                    int subW = overlapsTimePillY
+                        ? Math.Max(80, timePill.Left - aLeft - 8)
+                        : Math.Max(80, r.Right - aLeft - 14);
+                    lblSub.SetBounds(aLeft, subYNow, subW, lblSub.Height);
+
+                    int photoYNow = Math.Max(r.Y + 66, lblSub.Bottom + 6);
+                    int canvasW = Math.Max(180, r.Width - 24);
+                    int canvasH = Math.Clamp(canvasW, 260, 380);
+                    photoCanvas.SetBounds(r.X + 12, photoYNow, canvasW, canvasH);
+
+                    footer.SetBounds(r.X + 12, photoCanvas.Bottom + 8, canvasW, 42);
+                    LayoutFooter();
+
+                    int desiredCardH = footer.Bottom + 8 + 6;
+                    if (card.Height != desiredCardH)
+                    {
+                        card.Height = desiredCardH;
+                    }
+                }
+                finally
+                {
+                    layingOutCard = false;
+                }
+            }
 
             card.Controls.Add(avatarHost);
             card.Controls.Add(lblAuthor);
             card.Controls.Add(lblSub);
             card.Controls.Add(photoCanvas);
+            card.Controls.Add(footer);
+
+            card.Resize += (s, e) => LayoutCardBody();
+            LayoutCardBody();
+            relayoutCard = LayoutCardBody;
 
             if (isMyTopCard)
             {
@@ -455,7 +737,7 @@ namespace PocketLog.Client
             return avatarHost;
         }
 
-        private Guna2Panel CreateEmptyHeroCard(
+        private ElevatedCardPanel CreateEmptyHeroCard(
             int width,
             bool useGradientBadge,
             UiIcon icon,
@@ -466,25 +748,26 @@ namespace PocketLog.Client
             Action onClick)
         {
             AppPalette theme = CurrentTheme;
-            Guna2Panel card = new Guna2Panel
+            var card = new ElevatedCardPanel(this)
             {
-                Size = new Size(width, 148),
+                Size = new Size(width, 156),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                BorderRadius = 26,
-                FillColor = clrCardBg,
-                BorderColor = borderColor,
-                BorderThickness = 1,
-                UseTransparentBackground = true,
+                CornerRadius = 26,
+                ElevationLevel = 2,
+                CardFillColor = clrCardBg,
+                CardBorderColor = borderColor,
+                CardBorderThickness = 1,
+                BackColor = clrAppBg,
                 Cursor = Cursors.Hand
             };
-            AttachEdgeResizeRedirector(card);
 
+            Rectangle initInner = card.InnerCardBounds;
             Control badge;
             if (useGradientBadge)
             {
                 var gradBadge = new Guna2GradientPanel
                 {
-                    Location = new Point((width - 52) / 2, 18),
+                    Location = new Point(initInner.X + (initInner.Width - 52) / 2, initInner.Y + 18),
                     Size = new Size(52, 52),
                     BorderRadius = 17,
                     FillColor = theme.AccentPrimary,
@@ -510,24 +793,35 @@ namespace PocketLog.Client
             else
             {
                 Color accentText = isDarkMode ? clrAccentSecondary : clrPrimaryGreen;
-                var softBadge = MakeSoftIconBadge(icon, (width - 46) / 2, 18, 46, 15, clrSoftGreenBg, accentText);
+                var softBadge = MakeSoftIconBadge(icon, initInner.X + (initInner.Width - 46) / 2, initInner.Y + 18, 46, 15, clrSoftGreenBg, accentText);
                 softBadge.Cursor = Cursors.Hand;
                 badge = softBadge;
             }
 
             int textStartY = badge.Bottom + 10;
-            var lbl1 = MakeLabel(title, 16, textStartY, 10.2F, FontStyle.Bold, titleColor, Math.Max(140, width - 32));
+            int initTextW = Math.Max(140, initInner.Width - 32);
+            var lbl1 = MakeLabel(title, initInner.X + 16, textStartY, 10.2F, FontStyle.Bold, titleColor, initTextW);
             lbl1.TextAlign = ContentAlignment.MiddleCenter;
-            lbl1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lbl1.Cursor = Cursors.Hand;
 
-            var lbl2 = MakeLabel(subtitle, 16, lbl1.Bottom + 4, 8.8F, FontStyle.Regular, clrTextMuted, Math.Max(140, width - 32), lines: 2);
+            var lbl2 = MakeLabel(subtitle, initInner.X + 16, lbl1.Bottom + 4, 8.8F, FontStyle.Regular, clrTextMuted, initTextW, lines: 2);
             lbl2.TextAlign = ContentAlignment.MiddleCenter;
-            lbl2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lbl2.Cursor = Cursors.Hand;
 
-            card.Height = lbl2.Bottom + 16;
-            card.Resize += (s, e) => badge.Left = (card.Width - badge.Width) / 2;
+            card.Height = lbl2.Bottom + 16 + 6;
+
+            void LayoutEmptyHero()
+            {
+                if (card.IsDisposed) return;
+                Rectangle r = card.InnerCardBounds;
+                badge.Left = r.X + (r.Width - badge.Width) / 2;
+                int txtW = Math.Max(140, r.Width - 32);
+                lbl1.SetBounds(r.X + 16, lbl1.Top, txtW, lbl1.Height);
+                lbl2.SetBounds(r.X + 16, lbl2.Top, txtW, lbl2.Height);
+            }
+
+            card.Resize += (s, e) => LayoutEmptyHero();
+            LayoutEmptyHero();
 
             EventHandler handler = (s, e) => onClick?.Invoke();
             card.Click += handler;
@@ -573,7 +867,7 @@ namespace PocketLog.Client
             AttachEdgeResizeRedirector(galTopBar);
 
             int backW = Math.Max(188, MeasurePillBtnWidth("Quay lại Bảng tin", 8.6F, 19, true, 15));
-            var btnBack = MakeBtn("Quay lại Bảng tin", 0, 2, backW, 38, 19, clrCardBg, accentText, clrSoftGreenBorder, 1, 8.6F);
+            var btnBack = MakeBtn("Quay lại Bảng tin", 4, 2, backW, 38, 19, clrCardBg, accentText, clrSoftGreenBorder, 1, 8.6F);
             btnBack.HoverState.FillColor = clrSoftGreenBg;
             btnBack.HoverState.BorderColor = clrPrimaryGreen;
             AttachBtnIcon(btnBack, UiIcon.ChevronLeft, accentText, 15);
@@ -590,7 +884,7 @@ namespace PocketLog.Client
             int countW = Math.Max(104, MeasurePillBtnWidth(countText, 8.2F, 17));
             var countChip = new Guna2Panel
             {
-                Location = new Point(Math.Max(0, w - countW), 4),
+                Location = new Point(Math.Max(4, w - 4 - countW), 4),
                 Size = new Size(countW, 34),
                 BorderRadius = 17,
                 FillColor = clrSoftGreenBg,
@@ -614,7 +908,7 @@ namespace PocketLog.Client
             galTopBar.Controls.Add(countChip);
             col.Controls.Add(galTopBar);
 
-            var lblTitle = MakeLabel($"Kho ảnh của {currentFullName}", 2, 0, 12F, FontStyle.Bold, clrTextMain, Math.Max(140, w - 8));
+            var lblTitle = MakeLabel($"Kho ảnh của {currentFullName}", 4, 0, 12F, FontStyle.Bold, clrTextMain, Math.Max(140, w - 8));
             SetControlFont(lblTitle, FontBold(12F));
             lblTitle.Height = TextRenderer.MeasureText("Ág", lblTitle.Font).Height + 4;
             lblTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -622,6 +916,8 @@ namespace PocketLog.Client
 
             Control bodyControl;
             int bodyBottomMargin;
+            Action layoutGalleryGridAction = null;
+
             if (myPosts.Count == 0)
             {
                 var emptyGalCard = CreateEmptyHeroCard(
@@ -640,7 +936,6 @@ namespace PocketLog.Client
             }
             else
             {
-                const int thumbH = 132;
                 int l1H;
                 int l2H;
                 int timeH;
@@ -652,51 +947,35 @@ namespace PocketLog.Client
                     l2H = TextRenderer.MeasureText("Ág", f2).Height * 2 + 4;
                     timeH = TextRenderer.MeasureText("Ág", ft).Height + 4;
                 }
-                int cellH = 8 + thumbH + 8 + l1H + 2 + l2H + 10;
-                int rowHeight = cellH + 12;
 
-                int rows = (myPosts.Count + 1) / 2;
-                var grid = new BufferedTableLayout
+                var grid = new FeedBufferedPanel
                 {
                     Location = new Point(0, 0),
-                    Size = new Size(w, rows * rowHeight),
+                    Size = new Size(w, 260),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-                    ColumnCount = 2,
-                    RowCount = rows
+                    BackColor = Color.Transparent
                 };
-                grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-                grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-                for (int r = 0; r < rows; r++)
-                {
-                    grid.RowStyles.Add(new RowStyle(SizeType.Absolute, rowHeight));
-                }
                 AttachEdgeResizeRedirector(grid);
 
-                int initCellW = Math.Max(140, (w - 12) / 2);
+                var tileUpdaters = new List<(ElevatedCardPanel Cell, Action<int> LayoutTile)>();
+                int initTileW = Math.Max(140, (w - 12) / 2);
+
                 for (int i = 0; i < myPosts.Count; i++)
                 {
                     var item = myPosts[i];
-                    Guna2Panel cell = new Guna2Panel
+                    var cell = new ElevatedCardPanel(this)
                     {
-                        Size = new Size(initCellW, cellH),
-                        Dock = DockStyle.Fill,
-                        Margin = new Padding(i % 2 == 0 ? 0 : 6, 4, i % 2 == 0 ? 6 : 0, 8),
-                        BorderRadius = 22,
-                        FillColor = clrCardBg,
-                        BorderColor = clrBorderLight,
-                        BorderThickness = 1,
-                        UseTransparentBackground = true
-                    };
-                    AttachEdgeResizeRedirector(cell);
-
-                    var miniCanvas = new SocialPhotoCanvas(this, item, isMyTopCard: false, compactThumbnail: true)
-                    {
-                        Location = new Point(8, 8),
-                        Size = new Size(Math.Max(100, initCellW - 16), thumbH),
-                        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+                        Size = new Size(initTileW, 260),
+                        CornerRadius = 22,
+                        ElevationLevel = 2,
+                        CardFillColor = clrCardBg,
+                        CardBorderColor = clrBorderLight,
+                        CardBorderThickness = 1,
+                        BackColor = clrAppBg
                     };
 
-                    int line1Y = 8 + thumbH + 8;
+                    var miniCanvas = new SocialPhotoCanvas(this, item, isMyTopCard: false, compactThumbnail: true);
+
                     string itemTime = (item.Time ?? "").Trim();
                     Label lblItemTime = null;
                     if (!string.IsNullOrEmpty(itemTime))
@@ -710,22 +989,16 @@ namespace PocketLog.Client
                             BackColor = Color.Transparent,
                             UseMnemonic = false
                         };
-                        int measuredTimeW = lblItemTime.PreferredWidth;
-                        lblItemTime.Location = new Point(Math.Max(70, initCellW - 10 - measuredTimeW), line1Y + Math.Max(0, (l1H - timeH) / 2));
                     }
 
-                    int catAvailW = lblItemTime != null
-                        ? Math.Max(48, lblItemTime.Left - 10 - 4)
-                        : Math.Max(80, initCellW - 20);
                     var l1 = MakeLabel(
                         item.HasTag ? GetCategoryShortClean(item.Category) : "Ảnh Pocket",
-                        10,
-                        line1Y,
+                        14,
+                        0,
                         8.8F,
                         FontStyle.Bold,
                         item.HasTag ? accentText : clrIndigo,
-                        catAvailW);
-                    l1.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                        Math.Max(80, initTileW - 28));
 
                     string tagTxt = (item.TaggedFriends != null && item.TaggedFriends.Count > 0)
                         ? $"Tag: {string.Join(", ", item.TaggedFriends)}"
@@ -733,66 +1006,138 @@ namespace PocketLog.Client
                     string l2Text = item.HasTag
                         ? $"{item.NoteTop} ({tagTxt})"
                         : (string.IsNullOrWhiteSpace(item.CaptionInside) ? "Khoảnh khắc Pocket" : item.CaptionInside.Trim());
-                    var l2 = MakeLabel(l2Text, 10, line1Y + l1H + 2, 8.4F, FontStyle.Regular, clrTextMain, Math.Max(80, initCellW - 20), lines: 2);
-                    l2.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                    var l2 = MakeLabel(l2Text, 14, 0, 8.4F, FontStyle.Regular, clrTextMain, Math.Max(80, initTileW - 28), lines: 2);
 
-                    void LayoutGalleryCell()
+                    void LayoutTile(int targetThumbSide)
                     {
                         if (cell.IsDisposed) return;
-                        int cw = cell.Width;
+                        Rectangle inner = cell.InnerCardBounds;
+                        int side = Math.Clamp(targetThumbSide, 128, Math.Max(128, inner.Width - 20));
+                        int thumbX = inner.X + (inner.Width - side) / 2;
+                        miniCanvas.SetBounds(thumbX, inner.Y + 10, side, side);
+
+                        int line1Y = miniCanvas.Bottom + 8;
+                        int textLeft = inner.X + 10;
+                        int textRight = inner.Right - 10;
                         if (lblItemTime != null && !lblItemTime.IsDisposed)
                         {
-                            lblItemTime.Left = Math.Max(70, cw - 10 - lblItemTime.Width);
-                            l1.Width = Math.Max(48, lblItemTime.Left - l1.Left - 4);
+                            int timeW = lblItemTime.PreferredWidth;
+                            int timeLeft = Math.Max(textLeft + 52, textRight - timeW);
+                            lblItemTime.Location = new Point(timeLeft, line1Y + Math.Max(0, (l1H - timeH) / 2));
+                            l1.SetBounds(textLeft, line1Y, Math.Max(48, lblItemTime.Left - textLeft - 4), l1H);
                         }
                         else
                         {
-                            l1.Width = Math.Max(80, cw - 20);
+                            l1.SetBounds(textLeft, line1Y, Math.Max(60, textRight - textLeft), l1H);
                         }
-                        l2.Width = Math.Max(80, cw - 20);
-                    }
 
-                    cell.Resize += (s, e) => LayoutGalleryCell();
-                    cell.Layout += (s, e) => LayoutGalleryCell();
+                        l2.SetBounds(textLeft, line1Y + l1H + 2, Math.Max(60, textRight - textLeft), l2H);
+                    }
 
                     cell.Controls.Add(miniCanvas);
                     cell.Controls.Add(l1);
                     if (lblItemTime != null) cell.Controls.Add(lblItemTime);
                     cell.Controls.Add(l2);
-                    grid.Controls.Add(cell, i % 2, i / 2);
+                    grid.Controls.Add(cell);
+                    tileUpdaters.Add((cell, LayoutTile));
+                }
+
+                void LayoutGalleryGrid()
+                {
+                    if (grid.IsDisposed || col.IsDisposed) return;
+                    int gw = Math.Max(260, col.Width);
+                    if (grid.Width != gw)
+                    {
+                        grid.Width = gw;
+                    }
+
+                    const int colGap = 10;
+                    const int rowGap = 10;
+                    int tileW = Math.Max(140, (gw - colGap) / 2);
+                    int tileInnerW = Math.Max(132, tileW - 8);
+                    int thumbSide = Math.Clamp(tileInnerW - 20, 128, 360);
+                    int cellInnerH = 10 + thumbSide + 8 + l1H + 2 + l2H + 10;
+                    int cellH = cellInnerH + 8;
+
+                    int rows = (tileUpdaters.Count + 1) / 2;
+                    for (int i = 0; i < tileUpdaters.Count; i++)
+                    {
+                        int cIdx = i % 2;
+                        int rIdx = i / 2;
+                        int tx = cIdx == 0 ? 0 : Math.Max(tileW + colGap, gw - tileW);
+                        int ty = rIdx * (cellH + rowGap);
+                        var (cell, layoutTile) = tileUpdaters[i];
+                        if (cell.IsDisposed) continue;
+                        cell.SetBounds(tx, ty, tileW, cellH);
+                        layoutTile(thumbSide);
+                    }
+
+                    grid.Height = rows * cellH + Math.Max(0, rows - 1) * rowGap;
                 }
 
                 col.Controls.Add(grid);
                 bodyControl = grid;
                 bodyBottomMargin = 20;
+                layoutGalleryGridAction = LayoutGalleryGrid;
             }
 
+            bool layingOutGallery = false;
             void LayoutGalleryTopBar()
             {
-                if (galTopBar.IsDisposed || col.IsDisposed) return;
-                int tw = galTopBar.Width;
-                const int gap = 8;
-                if (backW + gap + countW <= tw)
+                if (layingOutGallery || galTopBar.IsDisposed || col.IsDisposed || page.IsDisposed) return;
+                layingOutGallery = true;
+                try
                 {
-                    galTopBar.Height = 42;
-                    btnBack.SetBounds(0, 2, backW, 38);
-                    countChip.SetBounds(tw - countW, 4, countW, 34);
-                }
-                else
-                {
-                    int bw = Math.Min(backW, tw);
-                    int cw = Math.Min(countW, tw);
-                    galTopBar.Height = 82;
-                    btnBack.SetBounds(0, 2, bw, 38);
-                    countChip.SetBounds(Math.Max(0, tw - cw), 44, cw, 34);
-                }
+                    int cwTotal = col.Width;
+                    if (cwTotal < 100) return;
 
-                lblTitle.Top = galTopBar.Bottom + 6;
-                bodyControl.Top = lblTitle.Bottom + 10;
-                col.Height = bodyControl.Bottom + bodyBottomMargin;
+                    if (galTopBar.Width != cwTotal)
+                    {
+                        galTopBar.Width = cwTotal;
+                    }
+
+                    int innerLeft = 4;
+                    int innerRight = cwTotal - 4;
+                    int availW = Math.Max(80, innerRight - innerLeft);
+                    const int gap = 8;
+                    if (backW + gap + countW <= availW)
+                    {
+                        galTopBar.Height = 42;
+                        btnBack.SetBounds(innerLeft, 2, backW, 38);
+                        countChip.SetBounds(innerRight - countW, 4, countW, 34);
+                    }
+                    else
+                    {
+                        int bw = Math.Min(backW, availW);
+                        int cw = Math.Min(countW, availW);
+                        galTopBar.Height = 82;
+                        btnBack.SetBounds(innerLeft, 2, bw, 38);
+                        countChip.SetBounds(Math.Max(innerLeft, innerRight - cw), 44, cw, 34);
+                    }
+
+                    lblTitle.SetBounds(4, galTopBar.Bottom + 6, Math.Max(140, cwTotal - 8), lblTitle.Height);
+                    bodyControl.Top = lblTitle.Bottom + 10;
+                    if (bodyControl.Width != cwTotal)
+                    {
+                        bodyControl.Width = cwTotal;
+                    }
+                    layoutGalleryGridAction?.Invoke();
+
+                    int targetColH = bodyControl.Bottom + bodyBottomMargin;
+                    if (col.Height != targetColH)
+                    {
+                        col.Height = targetColH;
+                    }
+                    (page as AndroidOverlayScrollPanel)?.SyncLayout();
+                }
+                finally
+                {
+                    layingOutGallery = false;
+                }
             }
 
             galTopBar.Resize += (s, e) => LayoutGalleryTopBar();
+            col.Resize += (s, e) => LayoutGalleryTopBar();
             LayoutGalleryTopBar();
             return page;
         }

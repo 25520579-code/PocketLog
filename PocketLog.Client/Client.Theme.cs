@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace PocketLog.Client
@@ -120,6 +121,8 @@ namespace PocketLog.Client
 
         protected bool isDarkMode;
         protected AppPalette CurrentTheme { get; private set; } = LightPalette;
+        private readonly HashSet<int> likedPostIds = new HashSet<int>();
+        private bool likedPostsLoaded;
 
         // Hooks populated by Auth (Task 3) & Camera (Task 5) screens to preserve unsaved inputs across theme switches
         private Func<(string Ip, string Port, string User, string Pass, bool ShowPass, bool IsRegister, string Budget)> authDraftCapture;
@@ -133,8 +136,82 @@ namespace PocketLog.Client
             return Path.Combine(dir, "theme_mode.txt");
         }
 
+        private static string GetLikedPostsPath()
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PocketLog");
+            return Path.Combine(dir, "liked_posts.json");
+        }
+
+        private void EnsureLikedPostsLoaded()
+        {
+            if (!likedPostsLoaded)
+            {
+                LoadLikedPosts();
+            }
+        }
+
+        protected void LoadLikedPosts()
+        {
+            likedPostIds.Clear();
+            likedPostsLoaded = true;
+            try
+            {
+                string path = GetLikedPostsPath();
+                if (File.Exists(path))
+                {
+                    string json = File.ReadAllText(path);
+                    int[] ids = JsonSerializer.Deserialize<int[]>(json);
+                    if (ids != null)
+                    {
+                        foreach (int id in ids)
+                        {
+                            likedPostIds.Add(id);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        protected void SaveLikedPosts()
+        {
+            try
+            {
+                string path = GetLikedPostsPath();
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                int[] sorted = likedPostIds.OrderBy(id => id).ToArray();
+                File.WriteAllText(path, JsonSerializer.Serialize(sorted));
+            }
+            catch { }
+        }
+
+        protected bool IsPostLiked(int postId)
+        {
+            EnsureLikedPostsLoaded();
+            return likedPostIds.Contains(postId);
+        }
+
+        protected bool TogglePostLiked(int postId)
+        {
+            EnsureLikedPostsLoaded();
+            bool nowLiked;
+            if (likedPostIds.Contains(postId))
+            {
+                likedPostIds.Remove(postId);
+                nowLiked = false;
+            }
+            else
+            {
+                likedPostIds.Add(postId);
+                nowLiked = true;
+            }
+            SaveLikedPosts();
+            return nowLiked;
+        }
+
         protected void LoadThemePreference()
         {
+            LoadLikedPosts();
             try
             {
                 string path = GetThemePreferencePath();
